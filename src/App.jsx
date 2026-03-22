@@ -72,66 +72,166 @@ export default function App() {
     { date: '2026-03-21 14:30', user: 'System (Auto-Sync)', action: 'Baseline Calculation', impact: 'N/A', status: 'Verified', badge: 'badge-success' }
   ]);
 
-  // Affectedness Check State (New Feature)
+  // Affectedness Check – Wizard State
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardAnswers, setWizardAnswers] = useState({});
+  const [wizardDone, setWizardDone] = useState(false);
+
   const [affectedData, setAffectedData] = useState({
     employees: 1500,
     revenue: 150000000,
-    balanceSheet: 25000000,
-    isPublicInterest: true,
-    inSupplyChain: true
+    hatGrosskunden: false,
+    bankHatGefragt: false,
+    hatFoerderung: false,
+    oeffentlicheAuftraege: false
   });
 
-  const [affectedResult, setAffectedResult] = useState({
-    status: 'Directly Affected',
-    class: 'badge-danger',
-    deadline: 'FY 2024 / Report 2025',
-    regulation: 'CSRD (Großkapitalgesellschaften)',
-    description: 'Dein Unternehmen erfüllt die Kriterien der CSRD und ist zur Berichterstattung verpflichtet.'
-  });
+  const [affectedResult, setAffectedResult] = useState(null);
 
-  const checkAffectedness = () => {
-    const { employees, revenue, balanceSheet, isPublicInterest, inSupplyChain } = affectedData;
+  const WIZARD_TOTAL = 5;
 
-    // Logic for CSRD
-    if (isPublicInterest && employees > 500) {
-      setAffectedResult({
-        status: 'Direkt Betroffen (NFRD Nachfolger)',
-        class: 'badge-danger',
-        deadline: 'FY 2024 / Bericht 2025',
-        regulation: 'CSRD (Kapitalmarktorientiert >500 MA)',
-        description: 'Sofortige Handlungspflicht. Dein Unternehmen unterliegt der Berichtspflicht der Stufe 1.'
-      });
-    } else if (employees > 250 || (revenue > 40000000 && balanceSheet > 20000000)) {
-      setAffectedResult({
-        status: 'Direkt Betroffen (Großunternehmen)',
-        class: 'badge-danger',
-        deadline: 'FY 2025 / Bericht 2026',
-        regulation: 'CSRD (Große Kapitalgesellschaften)',
-        description: 'Dein Unternehmen zählt als große Kapitalgesellschaft im Sinne der EU-Richtlinie.'
-      });
-    } else if (employees > 10 || inSupplyChain) {
-      setAffectedResult({
-        status: 'Indirekt / Zukünftig Betroffen',
-        class: 'badge-warning',
-        deadline: 'FY 2026 / 2027 (oder Lieferkette)',
-        regulation: 'CSRD (KMU) / LkSG (Lieferkette)',
-        description: 'Dein Unternehmen wird indirekt über Kunden (Lieferkette) oder zukünftige KMU-Regeln betroffen sein.'
-      });
+  const wizardQuestions = [
+    {
+      step: 1,
+      question: 'Wie viele Mitarbeitende hat euer Unternehmen?',
+      field: 'employeeRange',
+      options: [
+        { label: 'Unter 50 Mitarbeitende', value: 'under50' },
+        { label: '50 bis 249 Mitarbeitende', value: '50to249' },
+        { label: '250 bis 999 Mitarbeitende', value: '250to999' },
+        { label: 'Über 1.000 Mitarbeitende', value: 'over1000' },
+      ]
+    },
+    {
+      step: 2,
+      question: 'Wie hoch ist euer Jahresumsatz?',
+      field: 'revenueRange',
+      options: [
+        { label: 'Unter 10 Millionen Euro', value: 'under10m' },
+        { label: '10 bis 50 Millionen Euro', value: '10to50m' },
+        { label: '50 bis 450 Millionen Euro', value: '50to450m' },
+        { label: 'Über 450 Millionen Euro', value: 'over450m' },
+      ]
+    },
+    {
+      step: 3,
+      question: 'Habt ihr Großkunden mit über 450 Mio. Euro Jahresumsatz?',
+      field: 'hatGrosskunden',
+      options: [
+        { label: 'Ja', value: 'yes' },
+        { label: 'Nein', value: 'no' },
+        { label: 'Weiß nicht', value: 'unknown' },
+      ]
+    },
+    {
+      step: 4,
+      question: 'Hat eure Bank euch schon nach Nachhaltigkeit oder ESG gefragt?',
+      field: 'bankHatGefragt',
+      options: [
+        { label: 'Ja', value: 'yes' },
+        { label: 'Nein', value: 'no' },
+        { label: 'Weiß nicht', value: 'unknown' },
+      ]
+    },
+    {
+      step: 5,
+      question: 'Habt ihr EU-Förderungen, öffentliche Aufträge oder externe Investoren?',
+      field: 'hatFoerderung',
+      options: [
+        { label: 'Ja', value: 'yes' },
+        { label: 'Nein', value: 'no' },
+        { label: 'Weiß nicht', value: 'unknown' },
+      ]
+    },
+  ];
+
+  const handleWizardAnswer = (field, value) => {
+    const newAnswers = { ...wizardAnswers, [field]: value };
+    setWizardAnswers(newAnswers);
+
+    if (wizardStep < WIZARD_TOTAL) {
+      setWizardStep(s => s + 1);
     } else {
-      setAffectedResult({
-        status: 'Nicht direkt Betroffen',
-        class: 'badge-success',
-        deadline: 'Aktuell keine Pflicht',
-        regulation: 'Freiwillige Berichterstattung',
-        description: 'Aktuell keine gesetzliche Pflicht zur ESG-Berichtersttung. Freiwilliges Engagement empfohlen.'
-      });
+      // All steps done – evaluate
+      const isOver1000 = newAnswers.employeeRange === 'over1000';
+      const isOver450m = newAnswers.revenueRange === 'over450m';
+      const grosskunde = newAnswers.hatGrosskunden === 'yes' || newAnswers.hatGrosskunden === 'unknown';
+      const bank = newAnswers.bankHatGefragt === 'yes' || newAnswers.bankHatGefragt === 'unknown';
+      const foerderung = (newAnswers.hatFoerderung || value) === 'yes' || (newAnswers.hatFoerderung || value) === 'unknown';
+      const indirectTrigger = grosskunde || bank || foerderung;
+
+      let result;
+      if (isOver1000 && isOver450m) {
+        result = {
+          type: 'red',
+          badgeClass: 'badge-danger',
+          titel: 'Du bist direkt berichtspflichtig',
+          text: 'Dein Unternehmen fällt unter die CSRD-Pflicht ab Geschäftsjahr 2027. Bericht muss 2028 vorliegen. In Österreich betrifft das nur ca. 120 Unternehmen.',
+          frist: 'Bericht fällig: 2028 (für GJ 2027)',
+          status: 'Direkt berichtspflichtig (CSRD)',
+          regulation: 'CSRD – Große Kapitalgesellschaften',
+          description: 'Sofortige Handlungspflicht. Dein Unternehmen unterliegt der CSRD-Berichtspflicht.',
+          deadline: 'Bericht fällig: 2028 (für GJ 2027)',
+          bullets: [
+            'Nachhaltigkeitsbericht nach ESRS-Standards (Pflicht)',
+            'Externe Prüfpflicht (limited assurance)',
+            'CSDDD Lieferkettenpflichten ab 2029'
+          ]
+        };
+      } else if (indirectTrigger) {
+        result = {
+          type: 'yellow',
+          badgeClass: 'badge-warning',
+          titel: 'Du bist indirekt betroffen',
+          text: 'Keine gesetzliche Berichtspflicht – aber dein Großkunde, deine Bank oder Förderanträge verlangen bereits heute ESG-Daten von dir.',
+          frist: null,
+          status: 'Indirekt betroffen',
+          regulation: 'CSRD (Lieferkette) / EZB-Regulierung / EU-Taxonomie',
+          description: 'Kein direktes Gesetz, aber Marktdruck durch Großkunden, Banken und Förderanforderungen.',
+          deadline: 'Ab 2027 – Großkunden fragen aktiv',
+          bullets: [
+            'Großkunde fragt ab 2027 nach deinen ESG-Daten',
+            'Bank (Erste, Raiffeisen, etc.) bewertet Kreditrisiko mit ESG-Score',
+            'EU-Förderungen setzen zunehmend ESG-Nachweis voraus'
+          ]
+        };
+      } else {
+        result = {
+          type: 'green',
+          badgeClass: 'badge-success',
+          titel: 'Aktuell nicht direkt betroffen',
+          text: 'Das Omnibus-Paket 2026 hat die Pflichten für KMU stark reduziert. Derzeit keine gesetzliche Berichtspflicht.',
+          frist: null,
+          status: 'Nicht direkt betroffen',
+          regulation: 'Freiwillige Berichterstattung empfohlen',
+          description: 'Aktuell keine gesetzliche Pflicht. Freiwillige Vorbereitung trotzdem sinnvoll.',
+          deadline: 'Aktuell keine Pflicht',
+          bullets: [
+            'Omnibus 2026 hat Schwellenwert auf 1.000 MA angehoben',
+            'Freiwillige Vorbereitung trotzdem empfohlen',
+            '2031 prüft die EU ob Schwellenwerte wieder sinken'
+          ]
+        };
+      }
+      setAffectedResult(result);
+      setAffectedData(prev => ({
+        ...prev,
+        hatGrosskunden: newAnswers.hatGrosskunden === 'yes',
+        bankHatGefragt: newAnswers.bankHatGefragt === 'yes',
+        hatFoerderung: (newAnswers.hatFoerderung || value) === 'yes',
+        oeffentlicheAuftraege: (newAnswers.hatFoerderung || value) === 'yes',
+      }));
+      setWizardDone(true);
     }
-    setActiveTab('data'); // Go to next step
   };
 
-  const handleAffectedChange = (field, value) => {
-    setAffectedData(prev => ({ ...prev, [field]: value }));
+  const resetWizard = () => {
+    setWizardStep(1);
+    setWizardAnswers({});
+    setWizardDone(false);
+    setAffectedResult(null);
   };
+
 
   const handleChange = (category, field, value) => {
     setFormData(prev => ({
@@ -351,56 +451,109 @@ export default function App() {
       <div className="main-content">
         <div className="dashboard-container">
           {activeTab === 'affectedness' && (
-            <div style={{ maxWidth: '800px', margin: '0 auto', animation: 'fadeIn 0.3s ease-in-out' }}>
+            <div style={{ maxWidth: '700px', margin: '0 auto', animation: 'fadeIn 0.3s ease-in-out' }}>
               <div className="page-header">
                 <div>
-                  <h1>Affectedness Check (CSRD & LkSG)</h1>
-                  <p>Prüfe, ob dein Unternehmen unter die EU-Berichtspflicht fällt.</p>
+                  <h1>Betroffenheits-Check (CSRD & LkSG)</h1>
+                  <p>Finde in 2 Minuten heraus, ob dich die ESG-Pflicht betrifft.</p>
                 </div>
               </div>
 
-              <div className="card">
-                <div className="card-header">Unternehmens-Kenndaten</div>
-                <div className="card-body">
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                    <div className="form-group">
-                      <label>Anzahl Mitarbeiter (Vollzeitäquivalente)</label>
-                      <input type="number" className="form-control" value={affectedData.employees} onChange={e => handleAffectedChange('employees', Number(e.target.value))} />
+              {!wizardDone ? (
+                <div className="card">
+                  {/* Progress Bar */}
+                  <div style={{ padding: '1.5rem 1.5rem 0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      <span>Frage {wizardStep} von {WIZARD_TOTAL}</span>
+                      <span>{Math.round((wizardStep / WIZARD_TOTAL) * 100)}%</span>
                     </div>
-                    <div className="form-group">
-                      <label>Jahresumsatz (€)</label>
-                      <input type="number" className="form-control" value={affectedData.revenue} onChange={e => handleAffectedChange('revenue', Number(e.target.value))} />
-                    </div>
-                    <div className="form-group">
-                      <label>Bilanzsumme (€)</label>
-                      <input type="number" className="form-control" value={affectedData.balanceSheet} onChange={e => handleAffectedChange('balanceSheet', Number(e.target.value))} />
-                    </div>
-                    <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 'auto', marginBottom: '10px' }}>
-                      <input type="checkbox" id="publicInterest" checked={affectedData.isPublicInterest} onChange={e => handleAffectedChange('isPublicInterest', e.target.checked)} />
-                      <label htmlFor="publicInterest" style={{ marginBottom: 0 }}>Kapitalmarktorientiert? (Börsennotiert)</label>
-                    </div>
-                    <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 'auto', marginBottom: '10px' }}>
-                      <input type="checkbox" id="supplyChain" checked={affectedData.inSupplyChain} onChange={e => handleAffectedChange('inSupplyChain', e.target.checked)} />
-                      <label htmlFor="supplyChain" style={{ marginBottom: 0 }}>Teil einer kritischen Lieferkette?</label>
+                    <div className="progress-bar-container">
+                      <div className="progress-bar" style={{ width: `${(wizardStep / WIZARD_TOTAL) * 100}%`, backgroundColor: 'var(--primary)', transition: 'width 0.4s ease' }}></div>
                     </div>
                   </div>
-                  <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
-                    <button className="btn btn-primary" onClick={checkAffectedness}>Status prüfen & weiter zum Scoring</button>
-                  </div>
-                </div>
-              </div>
 
-              <div className="card" style={{ marginTop: '2rem', background: 'var(--bg-hover)', border: '1px solid var(--primary-subtle)' }}>
-                <div className="card-body" style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-                  <Info size={32} className="text-primary" />
-                  <div>
-                    <h4 style={{ marginBottom: '0.25rem' }}>Warum ist das wichtig?</h4>
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                      Die CSRD (Corporate Sustainability Reporting Directive) verpflichtet ab 2024 stufenweise ca. 50.000 Unternehmen in der EU zur Nachhaltigkeitsberichterstattung. Fehlinformationen können rechtliche Konsequenzen haben.
-                    </p>
+                  <div className="card-body" style={{ paddingTop: '1.5rem' }}>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '1.5rem', lineHeight: 1.4 }}>
+                      {wizardQuestions[wizardStep - 1].question}
+                    </h2>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {wizardQuestions[wizardStep - 1].options.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => handleWizardAnswer(wizardQuestions[wizardStep - 1].field, opt.value)}
+                          style={{
+                            width: '100%',
+                            padding: '1rem 1.25rem',
+                            textAlign: 'left',
+                            background: 'var(--bg-hover)',
+                            border: '2px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-md)',
+                            cursor: 'pointer',
+                            fontSize: '1rem',
+                            fontWeight: 500,
+                            color: 'var(--text-main)',
+                            transition: 'all 0.15s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.background = 'rgba(37,99,235,0.05)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {wizardStep > 1 && (
+                      <button
+                        onClick={() => setWizardStep(s => s - 1)}
+                        style={{ marginTop: '1rem', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.875rem' }}
+                      >
+                        ← Zurück
+                      </button>
+                    )}
                   </div>
                 </div>
-              </div>
+              ) : affectedResult && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  {/* Result Card */}
+                  <div className="card" style={{
+                    borderLeft: `4px solid ${affectedResult.type === 'red' ? 'var(--danger)' : affectedResult.type === 'yellow' ? 'var(--warning)' : 'var(--success)'}`,
+                  }}>
+                    <div className="card-body">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                        <span className={`badge ${affectedResult.badgeClass}`} style={{ fontSize: '0.85rem', padding: '0.4rem 1rem' }}>
+                          {affectedResult.titel}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '1rem', lineHeight: 1.6, marginBottom: '1.25rem' }}>{affectedResult.text}</p>
+                      {affectedResult.frist && (
+                        <div style={{ fontWeight: 700, color: 'var(--danger)', marginBottom: '1rem', fontSize: '0.95rem' }}>
+                          ⏰ {affectedResult.frist}
+                        </div>
+                      )}
+                      <div style={{ background: 'var(--bg-hover)', padding: '1rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.5rem' }}>
+                        <p style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.9rem' }}>Das bedeutet für dich konkret:</p>
+                        <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                          {affectedResult.bullets.map((b, i) => (
+                            <li key={i} style={{ fontSize: '0.9rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                              <span style={{ color: affectedResult.type === 'red' ? 'var(--danger)' : affectedResult.type === 'yellow' ? 'var(--warning)' : 'var(--success)', flexShrink: 0 }}>
+                                {affectedResult.type === 'red' ? '🔴' : affectedResult.type === 'yellow' ? '🟡' : '🟢'}
+                              </span>
+                              {b}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                        <button className="btn btn-primary" style={{ fontSize: '1rem', padding: '0.75rem 1.5rem' }} onClick={() => setActiveTab('data')}>
+                          Jetzt meinen ESG-Score berechnen →
+                        </button>
+                        <button className="btn btn-outline" onClick={resetWizard}>
+                          Erneut prüfen
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -518,27 +671,31 @@ export default function App() {
                   <h1>ESG Performance Dashboard</h1>
                   <p>Real-time corporate analysis benchmarked against the <b>{dashboardData.company.industry}</b> sector.</p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <div className={`badge ${affectedResult.class}`} style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
-                    <ShieldCheck size={14} style={{ marginRight: '6px' }} />
-                    {affectedResult.status}
+                {affectedResult && (
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div className={`badge ${affectedResult.badgeClass}`} style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
+                      <ShieldCheck size={14} style={{ marginRight: '6px' }} />
+                      {affectedResult.status}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Regulatory Navigator (USP) */}
-              <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--primary)' }}>
-                <div className="card-body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <h3 style={{ fontSize: '1.1rem', marginBottom: '0.25rem' }}>Regulatory Navigator: <span className="text-primary">{affectedResult.regulation}</span></h3>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{affectedResult.description}</p>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Frist:</div>
-                    <div style={{ color: 'var(--danger)', fontWeight: 700 }}>{affectedResult.deadline}</div>
+              {affectedResult && (
+                <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--primary)' }}>
+                  <div className="card-body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.1rem', marginBottom: '0.25rem' }}>Regulatory Navigator: <span className="text-primary">{affectedResult.regulation}</span></h3>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{affectedResult.description}</p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Frist:</div>
+                      <div style={{ color: 'var(--danger)', fontWeight: 700 }}>{affectedResult.deadline}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Top KPIs */}
               <div className="kpi-row">
@@ -704,7 +861,7 @@ export default function App() {
                       <div className="timeline-mini">
                         <div className="timeline-item-mini active">
                           <div className="dot"></div>
-                          <div className="text"><b>Heute:</b> {affectedResult.status}</div>
+                          <div className="text"><b>Heute:</b> {affectedResult?.status ?? 'Betroffenheits-Check noch nicht abgeschlossen'}</div>
                         </div>
                         <div className="timeline-item-mini">
                           <div className="dot"></div>
