@@ -521,3 +521,54 @@ select.form-control {
     margin-bottom: 2rem;
   }
 }
+
+/* Timeline Mini */
+.timeline-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding-left: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.timeline-item-mini {
+  position: relative;
+  display: flex;
+  gap: 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.timeline-item-mini::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0.5rem;
+  bottom: -1.25rem;
+  width: 2px;
+  background-color: var(--border-subtle);
+}
+
+.timeline-item-mini:last-child::before {
+  display: none;
+}
+
+.timeline-item-mini .dot {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--border-subtle);
+  z-index: 1;
+}
+
+.timeline-item-mini.active .dot {
+  background-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.timeline-item-mini .text {
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
