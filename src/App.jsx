@@ -42,7 +42,7 @@ const calcScore = (actual, target, lowerIsBetter) => {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('affectedness');
+  const [activeTab, setActiveTab] = useState('home');
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   // Toggle dark mode class on body
@@ -69,7 +69,7 @@ export default function App() {
 
   // Audit Trail
   const [auditLog, setAuditLog] = useState([
-    { date: '2026-03-21 14:30', user: 'System (Auto-Sync)', action: 'Baseline Calculation', impact: 'N/A', status: 'Verified', badge: 'badge-success' }
+    { date: '2026-03-21 14:30', user: 'System (Auto)', action: 'Erstberechnung', impact: '–', status: 'Geprüft', badge: 'badge-success' }
   ]);
 
   // Affectedness Check – Wizard State
@@ -155,10 +155,14 @@ export default function App() {
       // All steps done – evaluate
       const isOver1000 = newAnswers.employeeRange === 'over1000';
       const isOver450m = newAnswers.revenueRange === 'over450m';
-      const grosskunde = newAnswers.hatGrosskunden === 'yes' || newAnswers.hatGrosskunden === 'unknown';
-      const bank = newAnswers.bankHatGefragt === 'yes' || newAnswers.bankHatGefragt === 'unknown';
-      const foerderung = (newAnswers.hatFoerderung || value) === 'yes' || (newAnswers.hatFoerderung || value) === 'unknown';
-      const indirectTrigger = grosskunde || bank || foerderung;
+      const grosskundeJa = newAnswers.hatGrosskunden === 'yes';
+      const grosskundeUnklar = newAnswers.hatGrosskunden === 'unknown';
+      const bankJa = newAnswers.bankHatGefragt === 'yes';
+      const bankUnklar = newAnswers.bankHatGefragt === 'unknown';
+      const foerderungWert = newAnswers.hatFoerderung || value;
+      const foerderungJa = foerderungWert === 'yes';
+      const foerderungUnklar = foerderungWert === 'unknown';
+      const indirectTrigger = grosskundeJa || bankJa || foerderungJa || grosskundeUnklar || bankUnklar || foerderungUnklar;
 
       let result;
       if (isOver1000 && isOver450m) {
@@ -195,6 +199,9 @@ export default function App() {
             'EU-Förderungen setzen zunehmend ESG-Nachweis voraus'
           ]
         };
+        if (grosskundeUnklar || bankUnklar || foerderungUnklar) {
+          result.bullets.push('Tipp: Prüfe ob deine größten Kunden über 450 Mio. € Umsatz haben – dann bist du über die Lieferkette betroffen');
+        }
       } else {
         result = {
           type: 'green',
@@ -283,15 +290,15 @@ export default function App() {
 
     // 7. Audit Log
     const scoreDiff = total - newScores.prevTotal;
-    let impactText = scoreDiff === 0 ? 'Initial Calc' : (scoreDiff > 0 ? `+${scoreDiff} Pts` : `${scoreDiff} Pts`);
+    let impactText = scoreDiff === 0 ? 'Erstberechnung' : (scoreDiff > 0 ? `+${scoreDiff} Pts` : `${scoreDiff} Pts`);
     let impactClass = scoreDiff > 0 ? 'text-success' : (scoreDiff < 0 ? 'text-danger' : 'text-muted');
 
     const newLogEntry = {
       date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-      user: 'Current User',
-      action: 'ESG Recalculation',
+      user: 'Aktueller Benutzer',
+      action: 'ESG Neuberechnung',
       impact: <span className={impactClass}>{impactText}</span>,
-      status: 'Verified',
+      status: 'Geprüft',
       badge: 'badge-success'
     };
 
@@ -413,35 +420,33 @@ export default function App() {
         <div className="top-nav-left">
           <div className="logo-section">
             <ShieldCheck className="text-primary" />
-            <span>ESG Engine Pro</span>
+            <span>ESG Check Austria</span>
           </div>
           <div className="nav-links">
+            <div className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
+              <ShieldCheck size={16} /> Start
+            </div>
             <div className={`nav-item ${activeTab === 'affectedness' ? 'active' : ''}`} onClick={() => setActiveTab('affectedness')}>
-              <ShieldCheck size={16} /> Affectedness Check
+              <ShieldCheck size={16} /> Betroffenheits-Check
             </div>
             <div className={`nav-item ${activeTab === 'data' ? 'active' : ''}`} onClick={() => setActiveTab('data')}>
-              <FileText size={16} /> Data Entry
+              <FileText size={16} /> Meine Unternehmensdaten
             </div>
             <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-              <BarChart size={16} /> Dashboard
+              <BarChart size={16} /> Mein ESG-Ergebnis
             </div>
             <div className={`nav-item ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>
-              <History size={16} /> Audit Trail
+              <History size={16} /> Verlaufsprotokoll
             </div>
           </div>
         </div>
 
         <div className="top-nav-right">
-          <div className="company-context">
-            Company: <span>{dashboardData.company.name}</span> | {dashboardData.company.industry}
-          </div>
           <div className="action-buttons" style={{ alignItems: 'center' }}>
             <button className="theme-toggle" onClick={() => setIsDarkMode(!isDarkMode)} title="Toggle Dark Mode">
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <button className="btn btn-outline" onClick={() => window.print()}>
-              <Download size={16} /> Print CSRD Report
-            </button>
+
             <div className="user-avatar">SC</div>
           </div>
         </div>
@@ -450,6 +455,84 @@ export default function App() {
       {/* Main Content */}
       <div className="main-content">
         <div className="dashboard-container">
+          {activeTab === 'home' && (
+            <div style={{ maxWidth: '860px', margin: '0 auto', animation: 'fadeIn 0.3s ease-in-out', padding: '2rem 0' }}>
+              {/* Hero Headline */}
+              <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+                <h1 style={{ fontSize: '2.5rem', fontWeight: 800, lineHeight: 1.2, marginBottom: '1rem' }}>
+                  ESG betrifft dich –<br />auch wenn du es noch nicht weißt.
+                </h1>
+                <p style={{ fontSize: '1.2rem', color: 'var(--text-muted)', maxWidth: '560px', margin: '0 auto' }}>
+                  Finde in 2 Minuten heraus ob deine Bank, dein Großkunde oder eine Förderung bereits ESG-Daten von dir erwartet.
+                </p>
+              </div>
+
+              {/* 3 Entry Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+                {/* Card 1 – Bank */}
+                <div className="card" style={{ borderLeft: '4px solid var(--danger)', cursor: 'pointer', transition: 'box-shadow 0.2s' }}
+                  onClick={() => {
+                    setAffectedData(prev => ({ ...prev, bankHatGefragt: true }));
+                    setWizardStep(1); setWizardAnswers({}); setWizardDone(false); setAffectedResult(null);
+                    setActiveTab('affectedness');
+                  }}>
+                  <div className="card-body">
+                    <AlertOctagon size={28} style={{ color: 'var(--danger)', marginBottom: '0.75rem' }} />
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '0.5rem' }}>Meine Bank hat gefragt</h3>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+                      Deine Bank hat nach Nachhaltigkeit oder ESG gefragt und du wusstest nicht was du antworten sollst.
+                    </p>
+                    <span style={{ color: 'var(--danger)', fontWeight: 600, fontSize: '0.9rem' }}>Check starten →</span>
+                  </div>
+                </div>
+
+                {/* Card 2 – Großkunde */}
+                <div className="card" style={{ borderLeft: '4px solid var(--warning)', cursor: 'pointer', transition: 'box-shadow 0.2s' }}
+                  onClick={() => {
+                    setAffectedData(prev => ({ ...prev, hatGrosskunden: true }));
+                    setWizardStep(1); setWizardAnswers({}); setWizardDone(false); setAffectedResult(null);
+                    setActiveTab('affectedness');
+                  }}>
+                  <div className="card-body">
+                    <FileText size={28} style={{ color: 'var(--warning)', marginBottom: '0.75rem' }} />
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '0.5rem' }}>Mein Großkunde fragt mich</h3>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+                      Du bekommst ESG-Fragebögen von Auftraggebern und weißt nicht was du zurückschicken sollst.
+                    </p>
+                    <span style={{ color: 'var(--warning)', fontWeight: 600, fontSize: '0.9rem' }}>Check starten →</span>
+                  </div>
+                </div>
+
+                {/* Card 3 – Allgemein */}
+                <div className="card" style={{ borderLeft: '4px solid var(--success)', cursor: 'pointer', transition: 'box-shadow 0.2s' }}
+                  onClick={() => {
+                    setWizardStep(1); setWizardAnswers({}); setWizardDone(false); setAffectedResult(null);
+                    setActiveTab('affectedness');
+                  }}>
+                  <div className="card-body">
+                    <ShieldCheck size={28} style={{ color: 'var(--success)', marginBottom: '0.75rem' }} />
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '0.5rem' }}>Bin ich überhaupt betroffen?</h3>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+                      Du weißt nicht ob und wie ESG dein Unternehmen betrifft. Finde es in 2 Minuten heraus.
+                    </p>
+                    <span style={{ color: 'var(--success)', fontWeight: 600, fontSize: '0.9rem' }}>Check starten →</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main CTA */}
+              <div style={{ textAlign: 'center' }}>
+                <button className="btn btn-primary" style={{ fontSize: '1.1rem', padding: '1rem 2.5rem', borderRadius: 'var(--radius-md)' }}
+                  onClick={() => { setWizardStep(1); setWizardAnswers({}); setWizardDone(false); setAffectedResult(null); setActiveTab('affectedness'); }}>
+                  Jetzt kostenlos prüfen – dauert 2 Minuten
+                </button>
+                <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Für österreichische KMU · Kostenlos · Kein Login erforderlich · Aktuelle Rechtslage (Omnibus 2026)
+                </p>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'affectedness' && (
             <div style={{ maxWidth: '700px', margin: '0 auto', animation: 'fadeIn 0.3s ease-in-out' }}>
               <div className="page-header">
@@ -561,39 +644,39 @@ export default function App() {
             <div style={{ maxWidth: '900px', margin: '0 auto', animation: 'fadeIn 0.3s ease-in-out' }}>
               <div className="page-header">
                 <div>
-                  <h1>Data Entry Module</h1>
-                  <p>Input corporate metrics. Will be benchmarked against <b>{formData.company.industry}</b> industry standards.</p>
+                  <h1>Meine Unternehmensdaten</h1>
+                  <p>Gib deine Unternehmensdaten ein. Wird gegen <b>{formData.company.industry}</b> Branchenwerte gemessen.</p>
                 </div>
                 <button className="btn btn-primary" onClick={handleCalculate} style={{ fontSize: '1rem', padding: '0.75rem 1.5rem' }}>
-                  Calculate & View Dashboard
+                  Score berechnen & Ergebnis anzeigen
                 </button>
               </div>
 
               <div className="card form-section">
-                <div className="card-header">Company Context & Basics</div>
+                <div className="card-header">Unternehmen & Basisangaben</div>
                 <div className="card-body">
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div className="form-group">
-                      <label>Company Name</label>
+                      <label>Unternehmensname</label>
                       <input type="text" className="form-control" value={formData.company.name} onChange={e => handleChange('company', 'name', e.target.value)} />
                     </div>
                     <div className="form-group">
-                      <label>Industry</label>
+                      <label>Branche</label>
                       <select className="form-control" value={formData.company.industry} onChange={e => handleChange('company', 'industry', e.target.value)}>
-                        <option>Manufacturing</option>
-                        <option>Technology</option>
-                        <option>Finance</option>
-                        <option>Healthcare</option>
-                        <option>Energy</option>
-                        <option>Retail</option>
+                        <option value="Manufacturing">Produktion / Industrie</option>
+                        <option value="Technology">IT / Technologie</option>
+                        <option value="Finance">Finanzen / Banken</option>
+                        <option value="Healthcare">Gesundheit / Soziales</option>
+                        <option value="Energy">Energie / Versorgung</option>
+                        <option value="Retail">Handel / Einzelhandel</option>
                       </select>
                     </div>
                     <div className="form-group">
-                      <label>Total Employees</label>
+                      <label>Anzahl Mitarbeitende</label>
                       <input type="number" className="form-control" value={formData.company.employees} onChange={e => handleChange('company', 'employees', Number(e.target.value))} />
                     </div>
                     <div className="form-group">
-                      <label>Annual Revenue (USD)</label>
+                      <label>Jahresumsatz (€)</label>
                       <input type="number" className="form-control" value={formData.company.revenue} onChange={e => handleChange('company', 'revenue', Number(e.target.value))} />
                     </div>
                   </div>
@@ -601,19 +684,19 @@ export default function App() {
               </div>
 
               <div className="card form-section">
-                <div className="card-header"><Leaf size={16} style={{ color: 'var(--success)', marginRight: '0.5rem' }} /> Environment (E)</div>
+                <div className="card-header"><Leaf size={16} style={{ color: 'var(--success)', marginRight: '0.5rem' }} /> Umwelt (E)</div>
                 <div className="card-body">
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div className="form-group">
-                      <label>CO2 Emissions (Metric Tons)</label>
+                      <label>CO2-Ausstoß (Tonnen/Jahr)</label>
                       <input type="number" className="form-control" value={formData.env.co2} onChange={e => handleChange('env', 'co2', Number(e.target.value))} />
                     </div>
                     <div className="form-group">
-                      <label>Energy Consumption (MWh)</label>
+                      <label>Energieverbrauch (MWh/Jahr)</label>
                       <input type="number" className="form-control" value={formData.env.energy} onChange={e => handleChange('env', 'energy', Number(e.target.value))} />
                     </div>
                     <div className="form-group">
-                      <label>Renewable Energy Ratio (%)</label>
+                      <label>Anteil Ökostrom / Erneuerbare Energie (%)</label>
                       <input type="number" className="form-control" max="100" value={formData.env.renewable} onChange={e => handleChange('env', 'renewable', Number(e.target.value))} />
                     </div>
                   </div>
@@ -621,15 +704,15 @@ export default function App() {
               </div>
 
               <div className="card form-section">
-                <div className="card-header"><Users size={16} style={{ color: 'var(--primary)', marginRight: '0.5rem' }} /> Social (S)</div>
+                <div className="card-header"><Users size={16} style={{ color: 'var(--primary)', marginRight: '0.5rem' }} /> Soziales (S)</div>
                 <div className="card-body">
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div className="form-group">
-                      <label>Diversity Ratio (%)</label>
+                      <label>Frauenanteil / Diversität (%)</label>
                       <input type="number" className="form-control" max="100" value={formData.soc.diversity} onChange={e => handleChange('soc', 'diversity', Number(e.target.value))} />
                     </div>
                     <div className="form-group">
-                      <label>Employee Turnover Rate (%)</label>
+                      <label>Mitarbeiterfluktuation (%)</label>
                       <input type="number" className="form-control" max="100" value={formData.soc.turnover} onChange={e => handleChange('soc', 'turnover', Number(e.target.value))} />
                     </div>
                   </div>
@@ -637,15 +720,15 @@ export default function App() {
               </div>
 
               <div className="card form-section">
-                <div className="card-header"><Building size={16} style={{ color: 'var(--warning)', marginRight: '0.5rem' }} /> Governance (G)</div>
+                <div className="card-header"><Building size={16} style={{ color: 'var(--warning)', marginRight: '0.5rem' }} /> Unternehmensführung (G)</div>
                 <div className="card-body">
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div className="form-group">
-                      <label>Independent Board Members (%)</label>
+                      <label>Unabhängige Aufsichtsräte (%)</label>
                       <input type="number" className="form-control" max="100" value={formData.gov.boardIndependent} onChange={e => handleChange('gov', 'boardIndependent', Number(e.target.value))} />
                     </div>
                     <div className="form-group">
-                      <label>Compliance Incidents (Count)</label>
+                      <label>Rechtsverstöße / Bußgelder (Anzahl)</label>
                       <input type="number" className="form-control" value={formData.gov.incidents} onChange={e => handleChange('gov', 'incidents', Number(e.target.value))} />
                     </div>
                   </div>
@@ -658,9 +741,9 @@ export default function App() {
           {activeTab === 'dashboard' && scores.total === 0 && (
             <div className="empty-state">
               <BarChart size={48} />
-              <h2>No Dashboard Data</h2>
-              <p>Please go to Data Entry and calculate your score first.</p>
-              <button className="btn btn-primary" style={{ marginTop: '1.5rem' }} onClick={() => setActiveTab('data')}>Go to Data Entry</button>
+              <h2>Noch keine Daten vorhanden</h2>
+              <p>Bitte gib zuerst deine Unternehmensdaten ein und berechne deinen Score.</p>
+              <button className="btn btn-primary" style={{ marginTop: '1.5rem' }} onClick={() => setActiveTab('data')}>Zu meinen Unternehmensdaten</button>
             </div>
           )}
 
@@ -668,45 +751,107 @@ export default function App() {
             <div style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
               <div className="page-header">
                 <div>
-                  <h1>ESG Performance Dashboard</h1>
-                  <p>Real-time corporate analysis benchmarked against the <b>{dashboardData.company.industry}</b> sector.</p>
+                  <h1>Mein ESG-Ergebnis</h1>
+                  <p>Branchenvergleich für die Branche: <b>{dashboardData.company.industry}</b></p>
                 </div>
-                {affectedResult && (
-                  <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="action-buttons" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button className="btn btn-primary" onClick={() => window.print()}>
+                    <Download size={16} /> Report drucken
+                  </button>
+                  {affectedResult && (
                     <div className={`badge ${affectedResult.badgeClass}`} style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
                       <ShieldCheck size={14} style={{ marginRight: '6px' }} />
                       {affectedResult.status}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
-              {/* Regulatory Navigator (USP) */}
-              {affectedResult && (
-                <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--primary)' }}>
-                  <div className="card-body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <h3 style={{ fontSize: '1.1rem', marginBottom: '0.25rem' }}>Regulatory Navigator: <span className="text-primary">{affectedResult.regulation}</span></h3>
-                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{affectedResult.description}</p>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Frist:</div>
-                      <div style={{ color: 'var(--danger)', fontWeight: 700 }}>{affectedResult.deadline}</div>
-                    </div>
-                  </div>
+              {/* Regulatory Navigator – 5-Zeilen Tabelle */}
+              <div className="card" style={{ marginBottom: '1.5rem' }}>
+                <div className="card-header"><ShieldCheck size={16} /> Regulatory Navigator – Deine Betroffenheit
                 </div>
-              )}
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Regulierung</th>
+                        <th>Status</th>
+                        <th>Was bedeutet das?</th>
+                        <th>Was tun?</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Zeile 1 – CSRD */}
+                      {(() => {
+                        const isCsrdDirect = wizardAnswers.employeeRange === 'over1000' && wizardAnswers.revenueRange === 'over450m';
+                        return (
+                          <tr>
+                            <td style={{ fontWeight: 600 }}>CSRD Berichtspflicht</td>
+                            <td><span className={`badge ${isCsrdDirect ? 'badge-danger' : 'badge-success'}`}>{isCsrdDirect ? 'Direkt betroffen' : 'Nicht betroffen'}</span></td>
+                            <td style={{ fontSize: '0.875rem' }}>{isCsrdDirect ? 'Berichtspflicht ab GJ 2027 – Bericht bis 2028 fällig' : 'Aktuell nicht betroffen – Omnibus hat Schwellenwert angehoben'}</td>
+                            <td style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{isCsrdDirect ? 'ESRS-Standards prüfen, externe Prüfung beauftragen' : 'Freiwillige Vorbereitung empfohlen'}</td>
+                          </tr>
+                        );
+                      })()}
+                      {/* Zeile 2 – CSDDD */}
+                      {(() => {
+                        const csdddHit = wizardAnswers.hatGrosskunden === 'yes';
+                        return (
+                          <tr>
+                            <td style={{ fontWeight: 600 }}>CSDDD Lieferkette</td>
+                            <td><span className={`badge ${csdddHit ? 'badge-warning' : 'badge-success'}`}>{csdddHit ? 'Indirekt betroffen' : 'Kein Druck erkannt'}</span></td>
+                            <td style={{ fontSize: '0.875rem' }}>{csdddHit ? 'Dein Großkunde muss ab 2027 Lieferkette reporten – braucht deine Daten' : 'Kein direkter Lieferkettendruck erkannt'}</td>
+                            <td style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{csdddHit ? 'ESG-Basisdaten für Lieferantenanfragen bereithalten' : 'Beobachten – bei neuen Großkunden prüfen'}</td>
+                          </tr>
+                        );
+                      })()}
+                      {/* Zeile 3 – EZB */}
+                      <tr>
+                        <td style={{ fontWeight: 600 }}>EZB / Bankenregulierung</td>
+                        <td><span className="badge badge-warning">Alle betroffen</span></td>
+                        <td style={{ fontSize: '0.875rem' }}>Banken bewerten Kreditrisiko mit ESG-Score – unabhängig vom Gesetz</td>
+                        <td style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>ESG-Score vor nächstem Bankgespräch optimieren</td>
+                      </tr>
+                      {/* Zeile 4 – EU-Taxonomie */}
+                      {(() => {
+                        const taxHit = wizardAnswers.hatFoerderung === 'yes';
+                        return (
+                          <tr>
+                            <td style={{ fontWeight: 600 }}>EU-Taxonomie</td>
+                            <td><span className={`badge ${taxHit ? 'badge-warning' : 'badge-success'}`}>{taxHit ? 'Relevant' : 'Aktuell nicht relevant'}</span></td>
+                            <td style={{ fontSize: '0.875rem' }}>{taxHit ? 'Grüne Kredite und EU-Förderungen setzen Taxonomie-Konformität voraus' : 'Aktuell nicht relevant'}</td>
+                            <td style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{taxHit ? 'Taxonomie-Kriterien bei nächstem Förderantrag prüfen' : 'Bei Förderantrag neu prüfen'}</td>
+                          </tr>
+                        );
+                      })()}
+                      {/* Zeile 5 – Öffentliche Vergabe */}
+                      {(() => {
+                        const vergabeHit = wizardAnswers.hatFoerderung === 'yes';
+                        return (
+                          <tr>
+                            <td style={{ fontWeight: 600 }}>Öffentliche Vergabe</td>
+                            <td><span className={`badge ${vergabeHit ? 'badge-warning' : 'badge-success'}`}>{vergabeHit ? 'Relevant' : 'Kein Druck'}</span></td>
+                            <td style={{ fontSize: '0.875rem' }}>{vergabeHit ? 'Öffentliche Auftraggeber verlangen zunehmend ESG-Nachweise' : 'Aktuell kein öffentlicher Auftragsdruck'}</td>
+                            <td style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{vergabeHit ? 'ESG-Dokumentation für Ausschreibungen aufbereiten' : 'Bei Ausschreibungen neu prüfen'}</td>
+                          </tr>
+                        );
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
               {/* Top KPIs */}
               <div className="kpi-row">
                 <div className="kpi-card score-kpi">
-                  <div className="kpi-title">Overall ESG Score</div>
+                  <div className="kpi-title">Gesamt ESG-Score</div>
                   <div className="kpi-value">
                     {scores.total} <span className="kpi-sub">/ 100</span>
                   </div>
                   <div className={`kpi-trend ${trendDiff > 0 ? 'trend-up' : (trendDiff < 0 ? 'trend-down' : 'trend-neutral')}`}>
                     {trendDiff > 0 ? <TrendingUp size={14} /> : (trendDiff < 0 ? <TrendingDown size={14} /> : <Minus size={14} />)}
-                    {trendDiff > 0 ? `+${trendDiff}` : trendDiff} pts vs Previous Calculation
+                    {trendDiff > 0 ? `+${trendDiff}` : trendDiff} Punkte vs. vorherige Berechnung
                   </div>
                   <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     <b>Explainability Layer:</b> Dieser Score gewichtet Umwelt (40%), Soziales (30%) und Governance (30%) gegen Branchen-Benchmarks.
@@ -719,7 +864,7 @@ export default function App() {
                     {grade}
                   </div>
                   <div className="kpi-trend trend-neutral">
-                    <Minus size={14} /> Sector Median: C
+                    <Minus size={14} /> Branchendurchschnitt: C
                   </div>
                 </div>
 
@@ -727,12 +872,69 @@ export default function App() {
                   <div className="kpi-title">Compliance Status</div>
                   <div className="kpi-value">
                     {dashboardData.gov.incidents === 0
-                      ? <span className="badge badge-success"><CheckCircle2 size={14} style={{ marginRight: '4px' }} /> Fully Compliant</span>
-                      : <span className="badge badge-danger"><AlertOctagon size={14} style={{ marginRight: '4px' }} /> Risk Detected</span>}
+                      ? <span className="badge badge-success"><CheckCircle2 size={14} style={{ marginRight: '4px' }} /> Regelkonform</span>
+                      : <span className="badge badge-danger"><AlertOctagon size={14} style={{ marginRight: '4px' }} /> Risiko erkannt</span>}
                   </div>
                   <div className="kpi-trend trend-neutral">
-                    {dashboardData.gov.incidents} unresolved incidents
+                    {dashboardData.gov.incidents} offene Vorfälle
                   </div>
+                </div>
+              </div>
+
+              {/* Score Kontext */}
+              <div className="card" style={{ marginBottom: '1.5rem' }}>
+                <div className="card-header"><Info size={16} /> Was bedeutet dein Score konkret?</div>
+                <div className="card-body" style={{ padding: '0' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Für was?</th>
+                        <th>Bewertung</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style={{ fontWeight: 600 }}>🏦 Bankgespräch</td>
+                        <td style={{ fontSize: '0.9rem' }}>
+                          {scores.total > 70
+                            ? <span>✅ Gute Ausgangslage – du kannst ESG-Score vorweisen</span>
+                            : scores.total >= 50
+                              ? <span>⚠️ Verbesserungspotenzial vor dem nächsten Kreditgespräch</span>
+                              : <span>❌ Hohes Risiko – schlechtere Kreditkonditionen möglich</span>}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style={{ fontWeight: 600 }}>📦 Großkundenanfrage</td>
+                        <td style={{ fontSize: '0.9rem' }}>
+                          {scores.total > 70
+                            ? <span>✅ Du kannst Lieferantenfragebögen beantworten</span>
+                            : scores.total >= 50
+                              ? <span>⚠️ Einige Lücken in der Dokumentation</span>
+                              : <span>❌ Nicht ausreichend für Lieferantenanfragen</span>}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style={{ fontWeight: 600 }}>🇪🇺 EU-Förderung</td>
+                        <td style={{ fontSize: '0.9rem' }}>
+                          {scores.total > 70
+                            ? <span>✅ Grundvoraussetzungen weitgehend erfüllt</span>
+                            : scores.total >= 50
+                              ? <span>⚠️ 2–3 Kriterien noch nicht erfüllt</span>
+                              : <span>❌ Zu viele Kriterien fehlen noch</span>}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style={{ fontWeight: 600 }}>📋 Öffentliche Ausschreibung</td>
+                        <td style={{ fontSize: '0.9rem' }}>
+                          {scores.total > 70
+                            ? <span>✅ ESG-Nachweis vorbereitet</span>
+                            : scores.total >= 50
+                              ? <span>⚠️ Teilweise vorbereitet</span>
+                              : <span>❌ Aktuell nicht ausreichend</span>}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -742,12 +944,12 @@ export default function App() {
                   {/* Environmental Card */}
                   <div className="card">
                     <div className="card-header">
-                      <Leaf size={18} style={{ color: 'var(--success)' }} /> Environmental Performance
+                      <Leaf size={18} style={{ color: 'var(--success)' }} /> Umwelt (E)
                     </div>
                     <div className="card-body">
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                         <span style={{ fontWeight: 600, fontSize: '1.5rem' }}>{scores.eScore}</span>
-                        <span className="badge badge-neutral">Weight: 40%</span>
+                        <span className="badge badge-neutral">Gewichtung: 40%</span>
                       </div>
                       <div className="progress-bar-container">
                         <div className="progress-bar" style={{ width: `${scores.eScore}%`, backgroundColor: 'var(--success)' }}></div>
@@ -761,19 +963,19 @@ export default function App() {
                       </div>
                       <div style={{ marginTop: '1rem' }}>
                         <div className="breakdown-item">
-                          <span className="breakdown-label">CO2 Intensity (t/M$)</span>
+                          <span className="breakdown-label">CO2-Intensität (t/Mio. €)</span>
                           <span className="breakdown-value">
                             {dashboardData.actualCo2Int?.toFixed(1)} <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(vs {bm.co2Int})</span>
                           </span>
                         </div>
                         <div className="breakdown-item">
-                          <span className="breakdown-label">Energy Int. (MWh/M$)</span>
+                          <span className="breakdown-label">Energieintensität (MWh/Mio. €)</span>
                           <span className="breakdown-value">
                             {dashboardData.actualEnergyInt?.toFixed(1)} <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(vs {bm.energyInt})</span>
                           </span>
                         </div>
                         <div className="breakdown-item">
-                          <span className="breakdown-label">Renewables (%)</span>
+                          <span className="breakdown-label">Erneuerbare Energie (%)</span>
                           <span className="breakdown-value">
                             {dashboardData.env.renewable}% <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(vs {bm.renewable}%)</span>
                           </span>
@@ -785,12 +987,12 @@ export default function App() {
                   {/* Social Card */}
                   <div className="card">
                     <div className="card-header">
-                      <Users size={18} style={{ color: 'var(--primary)' }} /> Social & Workforce
+                      <Users size={18} style={{ color: 'var(--primary)' }} /> Soziales & Mitarbeitende (S)
                     </div>
                     <div className="card-body">
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                         <span style={{ fontWeight: 600, fontSize: '1.5rem' }}>{scores.sScore}</span>
-                        <span className="badge badge-neutral">Weight: 30%</span>
+                        <span className="badge badge-neutral">Gewichtung: 30%</span>
                       </div>
                       <div className="progress-bar-container">
                         <div className="progress-bar" style={{ width: `${scores.sScore}%`, backgroundColor: 'var(--primary)' }}></div>
@@ -804,13 +1006,13 @@ export default function App() {
                       </div>
                       <div style={{ marginTop: '1rem' }}>
                         <div className="breakdown-item">
-                          <span className="breakdown-label">Diversity Ratio (%)</span>
+                          <span className="breakdown-label">Diversität / Frauenanteil (%)</span>
                           <span className="breakdown-value">
                             {dashboardData.soc.diversity}% <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(vs {bm.diversity}%)</span>
                           </span>
                         </div>
                         <div className="breakdown-item">
-                          <span className="breakdown-label">Turnover Rate (%)</span>
+                          <span className="breakdown-label">Fluktuation (%)</span>
                           <span className="breakdown-value">
                             {dashboardData.soc.turnover}% <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(vs {bm.turnover}%)</span>
                           </span>
@@ -822,12 +1024,12 @@ export default function App() {
                   {/* Governance Card */}
                   <div className="card">
                     <div className="card-header">
-                      <Building size={18} style={{ color: 'var(--warning)' }} /> Corporate Governance
+                      <Building size={18} style={{ color: 'var(--warning)' }} /> Unternehmensführung (G)
                     </div>
                     <div className="card-body">
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                         <span style={{ fontWeight: 600, fontSize: '1.5rem' }}>{scores.gScore}</span>
-                        <span className="badge badge-neutral">Weight: 30%</span>
+                        <span className="badge badge-neutral">Gewichtung: 30%</span>
                       </div>
                       <div className="progress-bar-container">
                         <div className="progress-bar" style={{ width: `${scores.gScore}%`, backgroundColor: 'var(--warning)' }}></div>
@@ -841,39 +1043,81 @@ export default function App() {
                       </div>
                       <div style={{ marginTop: '1rem' }}>
                         <div className="breakdown-item">
-                          <span className="breakdown-label">Independent Board (%)</span>
+                          <span className="breakdown-label">Unabhängige Aufsichtsräte (%)</span>
                           <span className="breakdown-value">
                             {dashboardData.gov.boardIndependent}% <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(vs {bm.boardInd}%)</span>
                           </span>
                         </div>
                         <div className="breakdown-item">
-                          <span className="breakdown-label">Compliance Incidents</span>
+                          <span className="breakdown-label">Rechtsverstöße / Bußgelder</span>
                           <span className="breakdown-value">{dashboardData.gov.incidents} <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>(vs 0)</span></span>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* ESG Implementation Timeline (Bonus) */}
+                  {/* ESG Compliance Timeline – Horizontal */}
                   <div className="card" style={{ background: 'linear-gradient(to right, var(--bg-hover), transparent)' }}>
-                    <div className="card-header"><History size={16} /> ESG Compliance Roadmap</div>
+                    <div className="card-header"><History size={16} /> ESG Compliance Roadmap für Österreich</div>
                     <div className="card-body">
-                      <div className="timeline-mini">
-                        <div className="timeline-item-mini active">
-                          <div className="dot"></div>
-                          <div className="text"><b>Heute:</b> {affectedResult?.status ?? 'Betroffenheits-Check noch nicht abgeschlossen'}</div>
+                      {/* Timeline Track */}
+                      <div style={{ overflowX: 'auto', paddingBottom: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0', minWidth: '560px', position: 'relative', paddingTop: '1.5rem' }}>
+                          {/* Horizontal line */}
+                          <div style={{ position: 'absolute', top: '1.875rem', left: '2%', right: '2%', height: '3px', background: 'linear-gradient(to right, #94a3b8, #22c55e, #eab308, #f97316, #ef4444, #94a3b8)', zIndex: 0 }} />
+                          {[
+                            { year: '2024', label: 'NaDiVeG', text: 'Österreich hatte eigenes Nachhaltigkeitsgesetz (NaDiVeG) für große börsennotierte Unternehmen', color: '#94a3b8', active: false, dashed: false },
+                            { year: '2026', label: 'JETZT', text: 'NaBeG in Kraft (Feb. 2026). Omnibus-Paket (März 2026): KMU von direkter Pflicht befreit. Banken fragen aktiv nach ESG.', color: '#22c55e', active: true, dashed: false },
+                            { year: '2027', label: 'Bald', text: 'Große Firmen berichtspflichtig. Lieferkette wird abgefragt.', color: '#eab308', active: false, dashed: false },
+                            { year: '2029', label: 'Zukunft', text: 'CSDDD tritt in Kraft – Lieferkettenpflichten steigen', color: '#f97316', active: false, dashed: false },
+                            { year: '2031', label: 'Review', text: 'EU prüft ob Schwellenwerte für KMU wieder sinken', color: '#ef4444', active: false, dashed: false },
+                            { year: '2033', label: 'Möglich', text: 'Evtl. neue KMU-Pflichten falls Review positiv', color: '#94a3b8', active: false, dashed: true },
+                          ].map((point, i) => (
+                            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+                              {/* Dot */}
+                              <div style={{
+                                width: point.active ? '20px' : '14px',
+                                height: point.active ? '20px' : '14px',
+                                borderRadius: '50%',
+                                background: point.color,
+                                border: point.active ? `3px solid ${point.color}` : '2px solid ' + point.color,
+                                boxShadow: point.active ? `0 0 0 4px ${point.color}33` : 'none',
+                                outline: point.dashed ? '2px dashed ' + point.color : 'none',
+                                outlineOffset: '3px',
+                                flexShrink: 0,
+                                marginBottom: '0.5rem',
+                              }} />
+                              {/* Year + Label */}
+                              <div style={{ textAlign: 'center' }}>
+                                <div style={{ fontWeight: point.active ? 800 : 600, fontSize: point.active ? '1rem' : '0.85rem', color: point.active ? point.color : 'var(--text-main)' }}>
+                                  {point.year}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: point.active ? point.color : 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.35rem' }}>
+                                  {point.label}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.35, maxWidth: '90px', textAlign: 'center' }}>
+                                  {point.text}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <div className="timeline-item-mini">
-                          <div className="dot"></div>
-                          <div className="text"><b>2025:</b> Erste CSRD-Prüfung (Prüfungspflicht)</div>
-                        </div>
-                        <div className="timeline-item-mini">
-                          <div className="dot"></div>
-                          <div className="text"><b>2027:</b> Ausweitung auf Wertschöpfungskette</div>
-                        </div>
+                      </div>
+                      {/* Dynamic text */}
+                      <div style={{
+                        marginTop: '1.25rem', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', background: 'var(--bg-hover)', fontSize: '0.875rem', color: 'var(--text-muted)', borderLeft: `3px solid ${affectedResult?.type === 'red' ? 'var(--danger)' :
+                          affectedResult?.type === 'yellow' ? 'var(--warning)' : 'var(--success)'
+                          }`
+                      }}>
+                        {affectedResult?.type === 'red'
+                          ? '⏰ Du bist bereits betroffen. Starte jetzt mit der Vorbereitung – 2028 ist der erste Stichtag.'
+                          : affectedResult?.type === 'yellow'
+                            ? '📅 2027 wird dein Großkunde dich nach ESG-Daten fragen. Je früher du anfängst, desto besser.'
+                            : '✅ Du hast Zeit – aber 2031 könnte sich das durch die EU Review-Klausel ändern. Gut vorbereitet zu sein schadet nie.'}
                       </div>
                     </div>
                   </div>
+
 
                 </div>
 
@@ -881,18 +1125,18 @@ export default function App() {
 
                   <div className="card">
                     <div className="card-header">
-                      <Info size={18} /> Scoring Methodology
+                      <Info size={18} /> Wie wird der Score berechnet?
                     </div>
                     <div className="card-body">
                       <p style={{ color: 'var(--text-muted)', marginBottoom: '1rem' }}>
-                        Methodology evaluates actual corporate metrics against <b>{dashboardData.company.industry}</b> sector medians. Scores denote standard deviation from the baseline.
+                        Der Score vergleicht deine Unternehmensdaten mit dem <b>{dashboardData.company.industry}</b> Branchendurchschnitt. Je näher an 100, desto besser.
                       </p>
 
                       <div style={{ background: 'var(--bg-hover)', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', marginBottom: '1rem' }}>
                         <ul style={{ listStylePosition: 'inside', color: 'var(--text-muted)' }}>
-                          <li style={{ marginBottom: '0.25rem' }}><b>Environment (40%):</b> Evaluates Scope 1 & 2 carbon intensity per million USD revenue and renewable energy procurement against sector medians.</li>
-                          <li style={{ marginBottom: '0.25rem' }}><b>Social (30%):</b> Assesses workforce diversity representation and retention stability metrics.</li>
-                          <li style={{ marginBottom: '0.25rem' }}><b>Governance (30%):</b> Measures board independence ratios and applies severe non-compliance penalties (-40pts per active incident).</li>
+                          <li style={{ marginBottom: '0.25rem' }}><b>Environment (40%):</b> Bewertet CO2-Intensität und Energieverbrauch pro Million Euro Umsatz sowie den Anteil erneuerbarer Energien.</li>
+                          <li style={{ marginBottom: '0.25rem' }}><b>Social (30%):</b> Bewertet Diversität und Mitarbeiterfluktuation im Branchenvergleich.</li>
+                          <li style={{ marginBottom: '0.25rem' }}><b>Governance (30%):</b> Bewertet Aufsichtsrats-Unabhängigkeit und zieht Punkte für Compliance-Vorfälle ab.</li>
                         </ul>
                       </div>
                     </div>
@@ -935,15 +1179,15 @@ export default function App() {
 
           {activeTab === 'audit' && (
             <div className="card" style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
-              <div className="card-header">Audit Trail & Historical Logs</div>
+              <div className="card-header">Verlaufsprotokoll</div>
               <div className="card-body" style={{ padding: 0 }}>
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Timestamp</th>
-                      <th>User / Source</th>
-                      <th>Event Action</th>
-                      <th>Score Impact</th>
+                      <th>Zeitpunkt</th>
+                      <th>Benutzer / Quelle</th>
+                      <th>Aktion</th>
+                      <th>Score-Änderung</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -965,6 +1209,33 @@ export default function App() {
 
         </div>
       </div>
+
+      {/* Footer */}
+      <footer style={{
+        borderTop: '1px solid var(--border-subtle)',
+        background: 'var(--bg-card)',
+        padding: '1.5rem 2rem',
+        marginTop: 'auto',
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 600 }}>
+            ESG Check Austria
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '0.5rem' }}>
+              · Aktuelle Rechtslage: Omnibus-Paket März 2026
+            </span>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+            Dieses Tool dient der Orientierung und ersetzt keine Rechts- oder Steuerberatung.
+          </div>
+          <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.85rem' }}>
+            <a href="https://www.wko.at" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 500 }}>WKO ESG-Beratung ↗</a>
+            <a href="https://www.oekb.at" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 500 }}>OeKB ESG Data Hub ↗</a>
+          </div>
+        </div>
+        <div style={{ maxWidth: '1400px', margin: '0.75rem auto 0', fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+          Für verbindliche Auskünfte wende dich an die WKO Österreich oder einen ESG-zertifizierten Berater.
+        </div>
+      </footer>
     </div>
   );
 }
