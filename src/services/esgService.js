@@ -1,6 +1,6 @@
 import { supabase, hasSupabaseConfig } from '../lib/supabaseClient';
 import { benchmarks, normalizeBenchmark } from '../lib/esgEngine';
-import { average } from '../lib/analytics';
+import { average } from '../lib/calculations';
 
 const DEMO_COMPANY = {
   id: 'demo-company-1',

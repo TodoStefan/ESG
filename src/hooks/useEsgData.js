@@ -14,7 +14,7 @@ import {
   getRecommendations,
   normalizeBenchmark,
 } from '../lib/esgEngine';
-import { buildDashboardAnalytics } from '../lib/analytics';
+import { buildDashboardAnalytics } from '../lib/calculations';
 
 const defaultFormData = {
   company: { name: 'Demo GmbH', industry: 'Manufacturing', employees: 250, revenue: 25000000 },
