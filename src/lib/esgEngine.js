@@ -1,138 +1,159 @@
+import { normalizeBenchmark } from './benchmarkUtils';
+
 // --- ESG Scoring Engine ---
+// Diese Engine berechnet E, S und G separat und bildet daraus einen gewichteten
+// Gesamtscore. Die Berechnung basiert ausschließlich auf Unternehmenseingaben
+// und auf Benchmarks, die aus der Datenbank geladen werden.
+//
+// WICHTIG: Wenn kein Benchmark vorliegt (z.B. DB-Fehler), wird die Berechnung
+// nicht fortgesetzt — statt dessen wird ein Fehler geworfen und die aufrufende
+// Schicht muss den Fehler behandeln und dem Nutzer eine klare Meldung anzeigen.
 
-// Industry specific fallback benchmarks for relative scoring.
-// Intensities are per 1M EUR Revenue.
-export const benchmarks = {
-  Manufacturing: { co2Int: 150, energyInt: 500, renewable: 20, diversity: 30, turnover: 12, boardInd: 60 },
-  Technology: { co2Int: 15, energyInt: 100, renewable: 60, diversity: 35, turnover: 18, boardInd: 75 },
-  Finance: { co2Int: 5, energyInt: 50, renewable: 80, diversity: 45, turnover: 10, boardInd: 85 },
-  Healthcare: { co2Int: 60, energyInt: 300, renewable: 30, diversity: 50, turnover: 15, boardInd: 70 },
-  Energy: { co2Int: 600, energyInt: 900, renewable: 35, diversity: 25, turnover: 8, boardInd: 65 },
-  Retail: { co2Int: 40, energyInt: 200, renewable: 40, diversity: 45, turnover: 25, boardInd: 60 },
+// --- Zentrale Gewichtungen (konfigurierbar) ---
+const WEIGHTS = {
+  environmental: {
+    co2: 0.35,
+    energy: 0.25,
+    renewable: 0.2,
+    recycling: 0.2,
+  },
+  social: {
+    diversity: 0.25,
+    turnover: 0.25,
+    satisfaction: 0.3,
+    training: 0.2, // Weiterbildung / Sozialfaktor
+  },
+  governance: {
+    privacy: 0.35,
+    incidents: 0.3,
+    board: 0.25,
+    policies: 0.1,
+  },
+  totals: {
+    environmental: 0.4,
+    social: 0.3,
+    governance: 0.3,
+  },
 };
 
-export const normalizeBenchmark = (benchmarkLike, industry = 'Manufacturing') => {
-  const fallback = benchmarks[industry] || benchmarks.Manufacturing;
-  if (!benchmarkLike) return fallback;
+const clampScore = (v) => Math.min(100, Math.max(0, v));
 
-  return {
-    co2Int: benchmarkLike.co2Int ?? benchmarkLike.co2_intensity_target ?? fallback.co2Int,
-    energyInt: benchmarkLike.energyInt ?? benchmarkLike.energy_intensity_target ?? fallback.energyInt,
-    renewable: benchmarkLike.renewable ?? benchmarkLike.renewable_target ?? fallback.renewable,
-    diversity: benchmarkLike.diversity ?? benchmarkLike.diversity_target ?? fallback.diversity,
-    turnover: benchmarkLike.turnover ?? benchmarkLike.turnover_target ?? fallback.turnover,
-    boardInd: benchmarkLike.boardInd ?? benchmarkLike.board_independence_target ?? fallback.boardInd,
-  };
-};
+// Normalisiert einen Vergleich zwischen actual und target auf 0-100.
+// Bei Kennzahlen, bei denen niedrigere Werte besser sind (z.B. CO2, Energie),
+// wird `lowerIsBetter = true` gesetzt; für positive Kennzahlen (z.B. Recycling)
+// ist `lowerIsBetter = false`.
+// Die Funktion gibt 100 zurück, wenn actual deutlich besser ist, und <100
+// bei schlechterer Performance. Bei fehlendem target wird eine neutrale 50 zurückgegeben.
+const compareToBenchmark = (actual, target, lowerIsBetter) => {
+  const a = Number(actual ?? 0);
+  const t = Number(target ?? 0);
+  if (!t) return 50; // Keine Vergleichsbasis – neutral
 
-export const getBenchmarkStatus = (actual, target, lowerIsBetter) => {
-  if (target === 0) {
-    return { status: 'nahe an der Branchenreferenz', direction: 'near', deltaPercent: 0 };
+  // Prozentuale Abweichung
+  const delta = ((a - t) / t) * 100;
+
+  // Wenn besser als Benchmark, belohnen (score > 50), sonst bestrafen (score < 50)
+  if (lowerIsBetter ? a <= t : a >= t) {
+    // Bessere Performance skaliert in 50..100
+    const improvement = Math.min(100, Math.abs(delta));
+    return clampScore(50 + (improvement / 100) * 50);
   }
 
-  const deltaPercent = ((actual - target) / target) * 100;
-  const absDelta = Math.abs(deltaPercent);
-  const nearThreshold = 5;
-
-  if (absDelta <= nearThreshold) {
-    return { status: 'nahe an der Branchenreferenz', direction: 'near', deltaPercent };
-  }
-
-  const better = lowerIsBetter ? actual < target : actual > target;
-  return {
-    status: better ? 'über Branchenreferenz' : 'unter Branchenreferenz',
-    direction: better ? 'up' : 'down',
-    deltaPercent,
-  };
+  // Schlechtere Performance – disqualifizierend proportional zur Abweichung
+  const deterioration = Math.min(200, Math.abs(delta));
+  return clampScore(50 - (deterioration / 200) * 50);
 };
 
-const clampScore = (value) => Math.min(100, Math.max(0, value));
-
-const progressivePenalty = (deviationPercent) => {
-  if (deviationPercent <= 10) return deviationPercent * 1.2;
-  if (deviationPercent <= 30) return 12 + (deviationPercent - 10) * 1.6;
-  if (deviationPercent <= 60) return 44 + (deviationPercent - 30) * 1.2;
-  return 80 + (deviationPercent - 60) * 0.45;
+// Incident-basierte Bewertung (Compliance-Fälle)
+const incidentScore = (incidents) => {
+  const n = Number(incidents ?? 0);
+  if (n <= 0) return 100;
+  if (n === 1) return 80;
+  if (n === 2) return 60;
+  if (n === 3) return 40;
+  return 20;
 };
 
-// Progressives Scoring:
-// - Benchmark-Nähe bleibt stabil
-// - leichte Abweichungen: moderater Abzug
-// - starke Ausreißer: deutlich stärkerer Abzug
-// - gute Werte werden belohnt
-export const calcScore = (actual, target, lowerIsBetter) => {
-  if (target === 0) return 50; // Guard against / 0
-
-  const normalizedActual = Number(actual || 0);
-  const normalizedTarget = Number(target || 0);
-
-  if (normalizedActual === normalizedTarget) {
-    return 70;
-  }
-
-  // 1) Schlechter als Benchmark: progressive Strafe
-  const worse = lowerIsBetter
-    ? normalizedActual > normalizedTarget
-    : normalizedActual < normalizedTarget;
-
-  if (worse) {
-    const deviationPercent = Math.abs(((normalizedActual - normalizedTarget) / normalizedTarget) * 100);
-    const penalty = progressivePenalty(deviationPercent);
-    return clampScore(70 - penalty);
-  }
-
-  // 2) Besser als Benchmark: kontrollierte Belohnung bis max 100
-  const improvementPercent = Math.abs(((normalizedActual - normalizedTarget) / normalizedTarget) * 100);
-  const reward = Math.min(30, improvementPercent * 0.8);
-  return clampScore(70 + reward);
-};
-
-const getIncidentScore = (incidents) => {
-  const count = Number(incidents || 0);
-  if (count <= 0) return 100;
-  if (count === 1) return 72;
-  if (count === 2) return 42;
-  if (count === 3) return 18;
-  return 0;
-};
-
+/**
+ * calculateESGScores
+ * - formData: Unternehmenseingaben (env/soc/gov + company revenue)
+ * - benchmarkLike: Objekt aus DB (benchmarks row)
+ *
+ * Liefert: { eScore, sScore, gScore, total, actualCo2Int, actualEnergyInt }
+ * Wirft einen Error, wenn `benchmarkLike` fehlt.
+ */
 export const calculateESGScores = (formData, benchmarkLike) => {
+  if (!benchmarkLike) {
+    throw new Error('Benchmark data unavailable - cannot calculate ESG scores.');
+  }
+
   const benchmark = normalizeBenchmark(benchmarkLike, formData?.company?.industry);
-  const revM = (formData?.company?.revenue || 0) / 1000000 || 1;
-  const actualCo2Int = (formData?.env?.co2 || 0) / revM;
-  const actualEnergyInt = (formData?.env?.energy || 0) / revM;
+  if (!benchmark) {
+    throw new Error('Benchmark normalization failed - cannot calculate ESG scores.');
+  }
 
-  const eScore =
-    (
-      calcScore(actualCo2Int, benchmark.co2Int, true) +
-      calcScore(actualEnergyInt, benchmark.energyInt, true) +
-      calcScore(formData?.env?.renewable || 0, benchmark.renewable, false)
-    ) /
-    3;
+  // Revenue-normalisierte Intensitäten (t / Mio. €)
+  const revenueInMillions = Math.max(1, Number(formData?.company?.revenue || 0) / 1000000);
+  const actualCo2Int = Number(formData?.env?.co2 || 0) / revenueInMillions;
+  const actualEnergyInt = Number(formData?.env?.energy || 0) / revenueInMillions;
 
-  const sScore =
-    (
-      calcScore(formData?.soc?.diversity || 0, benchmark.diversity, false) +
-      calcScore(formData?.soc?.turnover || 0, benchmark.turnover, true)
-    ) /
-    2;
+  // ---- Environmental ----
+  // CO2 and Energy: lower is better => lowerIsBetter = true
+  const e_co2 = compareToBenchmark(actualCo2Int, benchmark.co2Int, true);
+  const e_energy = compareToBenchmark(actualEnergyInt, benchmark.energyInt, true);
+  // Renewable and Recycling: higher is better => lowerIsBetter = false
+  const e_renewable = compareToBenchmark(Number(formData?.env?.renewable || 0), benchmark.renewable, false);
+  const e_recycling = compareToBenchmark(Number(formData?.env?.recycling || 0), benchmark.recycling, false);
 
-  const incidentScore = getIncidentScore(formData?.gov?.incidents);
-  const gScore =
-    (
-      calcScore(formData?.gov?.boardIndependent || 0, benchmark.boardInd, false) +
-      incidentScore
-    ) /
-    2;
+  const eScoreRaw =
+    e_co2 * WEIGHTS.environmental.co2 +
+    e_energy * WEIGHTS.environmental.energy +
+    e_renewable * WEIGHTS.environmental.renewable +
+    e_recycling * WEIGHTS.environmental.recycling;
+
+  // ---- Social ----
+  const s_diversity = compareToBenchmark(Number(formData?.soc?.diversity || 0), benchmark.diversity, false);
+  const s_turnover = compareToBenchmark(Number(formData?.soc?.turnover || 0), benchmark.turnover, true);
+  const s_satisfaction = compareToBenchmark(Number(formData?.soc?.satisfaction || 0), benchmark.satisfaction, false);
+  const s_training = compareToBenchmark(Number(formData?.soc?.training || 0), benchmark.training ?? 0, false);
+
+  const sScoreRaw =
+    s_diversity * WEIGHTS.social.diversity +
+    s_turnover * WEIGHTS.social.turnover +
+    s_satisfaction * WEIGHTS.social.satisfaction +
+    s_training * WEIGHTS.social.training;
+
+  // ---- Governance ----
+  const g_privacy = compareToBenchmark(Number(formData?.gov?.dataProtection || 0), benchmark.privacy, false);
+  const g_incidents = incidentScore(Number(formData?.gov?.incidents || 0));
+  const g_board = compareToBenchmark(Number(formData?.gov?.boardIndependent || 0), benchmark.boardInd, false);
+  const g_policies = compareToBenchmark(Number(formData?.gov?.governancePolicies || 0), benchmark.policies ?? 0, false);
+
+  const gScoreRaw =
+    g_privacy * WEIGHTS.governance.privacy +
+    g_incidents * WEIGHTS.governance.incidents +
+    g_board * WEIGHTS.governance.board +
+    g_policies * WEIGHTS.governance.policies;
+
+  // Final normalisation to 0..100
+  const normalizedEScore = clampScore(eScoreRaw);
+  const normalizedSScore = clampScore(sScoreRaw);
+  const normalizedGScore = clampScore(gScoreRaw);
+
+  const totalScore = Math.round(
+    normalizedEScore * WEIGHTS.totals.environmental +
+    normalizedSScore * WEIGHTS.totals.social +
+    normalizedGScore * WEIGHTS.totals.governance
+  );
 
   return {
-    eScore: Math.round(eScore),
-    sScore: Math.round(sScore),
-    gScore: Math.round(gScore),
-    total: Math.round((eScore * 0.4) + (sScore * 0.3) + (gScore * 0.3)),
+    eScore: Math.round(normalizedEScore),
+    sScore: Math.round(normalizedSScore),
+    gScore: Math.round(normalizedGScore),
+    total: totalScore,
     actualCo2Int,
     actualEnergyInt,
-    benchmark,
+    benchmark: benchmarkLike,
   };
 };
 
@@ -144,16 +165,14 @@ export const getGrade = (score) => {
   return 'F';
 };
 
-// Dynamic ESG Strategy Recommendations (To-Do Generator)
 export const getRecommendations = (dashboardData, bm, scoreTotal) => {
-  // Guard check if no data
   if (scoreTotal === 0 || !dashboardData || !bm) return [];
 
   const recs = [];
   const benchmark = normalizeBenchmark(bm, dashboardData?.company?.industry);
+  if (!benchmark) return [];
   const calcVar = (act, bmValue) => Math.abs(((act - bmValue) / (bmValue || 1)) * 100).toFixed(1);
 
-  // Environment Rules
   if (dashboardData.actualCo2Int > benchmark.co2Int) {
     recs.push({
       priority: 'Hoch',
@@ -162,9 +181,10 @@ export const getRecommendations = (dashboardData, bm, scoreTotal) => {
       text: `Die CO2-Intensität liegt ${calcVar(dashboardData.actualCo2Int, benchmark.co2Int)}% über dem Branchendurchschnitt.`,
       action: 'Implementiere ein Energiemanagementsystem (ISO 50001) zur Identifikation von Einsparpotenzialen.',
       impact: 'Hoher Nutzen',
-      effort: 'Mittlerer Aufwand'
+      effort: 'Mittlerer Aufwand',
     });
   }
+
   if (dashboardData.env.renewable < benchmark.renewable) {
     recs.push({
       priority: 'Mittel',
@@ -173,68 +193,82 @@ export const getRecommendations = (dashboardData, bm, scoreTotal) => {
       text: `Der Anteil erneuerbarer Energien liegt ${calcVar(dashboardData.env.renewable, benchmark.renewable)}% unter der Branchenreferenz.`,
       action: 'Umstellung auf Ökostrom-Tarife oder Installation von PV-Anlagen auf Betriebsdächern.',
       impact: 'Mittlerer Nutzen',
-      effort: 'Niedriger Aufwand'
+      effort: 'Niedriger Aufwand',
     });
   }
 
-  // Social Rules
+  if (dashboardData.env.recycling < benchmark.recycling) {
+    recs.push({
+      priority: 'Mittel',
+      class: 'badge-priority-mittel',
+      category: 'Umwelt',
+      text: `Die Recyclingquote liegt ${calcVar(dashboardData.env.recycling, benchmark.recycling)}% unter dem Benchmark.`,
+      action: 'Einführung strukturierter Abfalltrennung und Recycling-Verträge.',
+      impact: 'Mittlerer Nutzen',
+      effort: 'Niedriger Aufwand',
+    });
+  }
+
   if (dashboardData.soc.diversity < benchmark.diversity) {
     recs.push({
       priority: 'Mittel',
       class: 'badge-priority-mittel',
       category: 'Soziales',
-  text: `Die Diversitätsquote liegt ${calcVar(dashboardData.soc.diversity, benchmark.diversity)}% unter dem Zielwert.`,
-      action: 'Einführung von Richtlinien für inklusives Recruiting und Diversity-Schulungen für Führungskräfte.',
+      text: `Die Diversitätsquote liegt ${calcVar(dashboardData.soc.diversity, benchmark.diversity)}% unter dem Zielwert.`,
+      action: 'Einführung von Richtlinien für inklusives Recruiting und Diversity-Schulungen.',
       impact: 'Langfristig hoher Nutzen',
-      effort: 'Mittlerer Aufwand'
+      effort: 'Mittlerer Aufwand',
     });
   }
+
   if (dashboardData.soc.turnover > benchmark.turnover) {
     recs.push({
       priority: 'Hoch',
       class: 'badge-priority-hoch',
       category: 'Soziales',
       text: `Die Fluktuationsrate liegt ${calcVar(dashboardData.soc.turnover, benchmark.turnover)}% über der Branchenreferenz.`,
-      action: 'Mitarbeiterbefragungen durchführen, um Austrittsgründe zu identifizieren und Teambuilding fördern.',
+      action: 'Mitarbeiterbefragungen durchführen, um Austrittsgründe zu identifizieren.',
       impact: 'Hoher Nutzen',
-      effort: 'Mittlerer Aufwand'
+      effort: 'Mittlerer Aufwand',
     });
   }
 
-  // Governance Rules
-  if (dashboardData.gov.boardIndependent < benchmark.boardInd) {
+  if (dashboardData.gov.dataProtection < benchmark.privacy) {
     recs.push({
       priority: 'Mittel',
       class: 'badge-priority-mittel',
-      category: 'Unternehmensführung',
-  text: `Vorstandsunabhängigkeit ist ${calcVar(dashboardData.gov.boardIndependent, benchmark.boardInd)}% geringer als empfohlen.`,
-      action: 'Sukzessive Neubesetzung von Aufsichtsratsmandaten mit unabhängigen Experten.',
-      impact: 'Governance-Risiko reduziert',
-      effort: 'Hoher Aufwand'
+      category: 'Governance',
+      text: `Der Datenschutzwert liegt ${calcVar(dashboardData.gov.dataProtection, benchmark.privacy)}% unter dem Branchenziel.`,
+      action: 'Ergänzung der internen Datenrichtlinie und Trainings zur DSGVO-Konformität.',
+      impact: 'Moderater Nutzen',
+      effort: 'Mittlerer Aufwand',
     });
   }
+
   if (dashboardData.gov.incidents > 0) {
     recs.push({
       priority: 'Hoch',
       class: 'badge-priority-risiko',
-      category: 'Unternehmensführung',
+      category: 'Governance',
       text: `${dashboardData.gov.incidents} aktive Regelkonformitätsvorfälle erhöhen das Reputationsrisiko.`,
-      action: 'Sofortige externe Untersuchung einleiten und Whistleblowing-System implementieren.',
+      action: 'Externe Prüfung einleiten und ein Whistleblowing-System implementieren.',
       impact: 'Erhöhtes Rechtsrisiko',
-      effort: 'Hoher Aufwand'
+      effort: 'Hoher Aufwand',
     });
   }
 
-  if (recs.length === 0) {
+  if (!recs.length) {
     recs.push({
       priority: 'Niedrig',
       class: 'badge-priority-niedrig',
       category: 'Allgemein',
       text: 'Alle Metriken liegen im grünen Bereich im Branchenvergleich.',
-      action: 'Weiterführung der aktuellen Strategie und Vorbereitung auf Scope-3 Berichterstattung.',
+      action: 'Weiterführung der aktuellen Strategie und Vorbereitung auf Scope-3-Berichterstattung.',
       impact: 'Stabile Ausgangslage',
-      effort: 'Laufender Aufwand'
+      effort: 'Laufender Aufwand',
     });
   }
+
   return recs;
 };
+

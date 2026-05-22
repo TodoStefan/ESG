@@ -1,104 +1,12 @@
 import { supabase, hasSupabaseConfig } from '../lib/supabaseClient';
-import { benchmarks, normalizeBenchmark } from '../lib/esgEngine';
+import { normalizeBenchmark, getCompanySizeCategory } from '../lib/benchmarkUtils';
 import { average } from '../lib/calculations';
 
-const DEMO_COMPANY = {
-  id: 'demo-company-1',
-  company_name: 'Demo GmbH',
-  industry: 'Manufacturing',
-  employee_count: 250,
-  annual_revenue: 25000000,
-};
-
-const DEMO_RECORDS = [
-  {
-    id: 'demo-r1',
-    company_id: DEMO_COMPANY.id,
-    co2_emissions: 13300,
-    energy_consumption: 41000,
-    renewable_share: 24,
-    diversity_share: 26,
-    employee_turnover: 14,
-    independent_board_share: 58,
-    legal_incidents: 1,
-    e_score: 44,
-    s_score: 49,
-    g_score: 46,
-    total_score: 46,
-    created_at: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'demo-r2',
-    company_id: DEMO_COMPANY.id,
-    co2_emissions: 12600,
-    energy_consumption: 39000,
-    renewable_share: 29,
-    diversity_share: 30,
-    employee_turnover: 11,
-    independent_board_share: 66,
-    legal_incidents: 0,
-    e_score: 55,
-    s_score: 60,
-    g_score: 70,
-    total_score: 61,
-    created_at: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'demo-r3',
-    company_id: DEMO_COMPANY.id,
-    co2_emissions: 11800,
-    energy_consumption: 37200,
-    renewable_share: 34,
-    diversity_share: 33,
-    employee_turnover: 9,
-    independent_board_share: 71,
-    legal_incidents: 0,
-    e_score: 63,
-    s_score: 64,
-    g_score: 76,
-    total_score: 67,
-    created_at: new Date().toISOString(),
-  },
-];
-
-const DEMO_AUDIT = [
-  {
-    id: 'demo-a1',
-    company_id: DEMO_COMPANY.id,
-    action: 'Erstberechnung erstellt',
-    actor: 'System',
-    impact: '+0 Pts',
-    status: 'Geprüft',
-    created_at: DEMO_RECORDS[0].created_at,
-  },
-  {
-    id: 'demo-a2',
-    company_id: DEMO_COMPANY.id,
-    action: 'Neuberechnung nach Energie-Maßnahmen',
-    actor: 'Demo User',
-    impact: '+15 Pts',
-    status: 'Geprüft',
-    created_at: DEMO_RECORDS[1].created_at,
-  },
-  {
-    id: 'demo-a3',
-    company_id: DEMO_COMPANY.id,
-    action: 'Neuberechnung Quartal 2',
-    actor: 'Demo User',
-    impact: '+6 Pts',
-    status: 'In Prüfung',
-    created_at: DEMO_RECORDS[2].created_at,
-  },
-];
-
-const DEMO_INDUSTRY_STATS = {
-  industryAverageScore: 59,
-  industryAverageE: 56,
-  industryAverageS: 58,
-  industryAverageG: 63,
-  companyCount: 5,
-  sampleSize: 14,
-};
+// NOTE: All static demo data has been removed from the productive flow.
+// Minimal offline fallbacks (empty lists / nulls) are returned when Supabase
+// is not configured or unreachable so the UI can render gracefully.
+// Do NOT rely on these values for any production calculation or decision logic.
+const OFFLINE_FALLBACK_INDUSTRIES = ['Manufacturing', 'Technology', 'Finance', 'Healthcare', 'Energy', 'Retail'];
 
 const hasMeaningfulVariance = (values = []) => {
   if (!Array.isArray(values) || values.length < 2) return false;
@@ -115,9 +23,7 @@ export const getCompanyByName = async (companyName, userId = null) => {
   if (!companyName) return null;
 
   if (!hasSupabaseConfig) {
-    if (companyName.toLowerCase() === DEMO_COMPANY.company_name.toLowerCase()) {
-      return DEMO_COMPANY;
-    }
+    console.warn('Supabase not configured: getCompanyByName returning null');
     return null;
   }
 
@@ -134,7 +40,6 @@ export const getCompanyByName = async (companyName, userId = null) => {
     }
 
     const { data, error } = await query.maybeSingle();
-
     if (error) throw error;
     return data;
   } catch (err) {
@@ -146,7 +51,8 @@ export const getLatestCompanyForUser = async (userId) => {
   if (!userId) return null;
 
   if (!hasSupabaseConfig) {
-    return DEMO_COMPANY;
+    console.warn('Supabase not configured: getLatestCompanyForUser returning null');
+    return null;
   }
 
   try {
@@ -157,7 +63,6 @@ export const getLatestCompanyForUser = async (userId) => {
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-
     if (error) throw error;
     return data;
   } catch (err) {
@@ -169,53 +74,40 @@ export const getCompanyInfo = async (companyId, userId = null) => {
   if (!companyId) return null;
 
   if (!hasSupabaseConfig) {
-    return companyId === DEMO_COMPANY.id ? DEMO_COMPANY : null;
+    console.warn('Supabase not configured: getCompanyInfo returning null');
+    return null;
   }
 
   try {
-    let query = supabase
-      .from('companies')
-      .select('*')
-      .eq('id', companyId);
-
-    if (userId) {
-      query = query.eq('user_id', userId);
-    }
-
+    let query = supabase.from('companies').select('*').eq('id', companyId);
+    if (userId) query = query.eq('user_id', userId);
     const { data, error } = await query.single();
-
     if (error) throw error;
     return data;
   } catch (err) {
     return handleError('Error fetching company info:', err, null);
   }
-};
+  }
 
 export const getESGRecords = async (companyId, userId = null) => {
   if (!companyId && hasSupabaseConfig) return [];
-
   if (!hasSupabaseConfig) {
-    return DEMO_RECORDS;
+    console.warn('Supabase not configured: getESGRecords returning empty list');
+    return [];
   }
 
   try {
     let query = supabase
-      .from('esg_records')
-      .select(userId ? '*, companies!inner(user_id)' : '*')
+      .from('esg_results')
+      .select(userId ? 'id, company_id, co2_emissions, energy_consumption, renewable_share, recycling_rate, diversity_share, employee_turnover, employee_satisfaction, independent_board_share, data_protection_score, legal_incidents, e_score, s_score, g_score, total_score, created_at, companies!inner(user_id)' : 'id, company_id, co2_emissions, energy_consumption, renewable_share, recycling_rate, diversity_share, employee_turnover, employee_satisfaction, independent_board_share, data_protection_score, legal_incidents, e_score, s_score, g_score, total_score, created_at')
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });
-
-    if (userId) {
-      query = query.eq('companies.user_id', userId);
-    }
+    if (userId) query = query.eq('companies.user_id', userId);
 
     const { data, error } = await query;
-
     if (error) throw error;
     return (data || []).map((record) => {
-      if ('companies' in record) {
-        delete record.companies;
-      }
+      if ('companies' in record) delete record.companies;
       return record;
     });
   } catch (err) {
@@ -225,29 +117,23 @@ export const getESGRecords = async (companyId, userId = null) => {
 
 export const getAuditLog = async (companyId, userId = null) => {
   if (!companyId && hasSupabaseConfig) return [];
-
   if (!hasSupabaseConfig) {
-    return DEMO_AUDIT;
+    console.warn('Supabase not configured: getAuditLog returning empty list');
+    return [];
   }
 
   try {
     let query = supabase
-      .from('audit_log')
-      .select(userId ? '*, companies!inner(user_id)' : '*')
+      .from('audit_logs')
+      .select(userId ? 'id, company_id, action, actor, impact, status, created_at, companies!inner(user_id)' : 'id, company_id, action, actor, impact, status, created_at')
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });
-
-    if (userId) {
-      query = query.eq('companies.user_id', userId);
-    }
+    if (userId) query = query.eq('companies.user_id', userId);
 
     const { data, error } = await query;
-
     if (error) throw error;
     return (data || []).map((entry) => {
-      if ('companies' in entry) {
-        delete entry.companies;
-      }
+      if ('companies' in entry) delete entry.companies;
       return entry;
     });
   } catch (err) {
@@ -255,48 +141,68 @@ export const getAuditLog = async (companyId, userId = null) => {
   }
 };
 
-export const getIndustryBenchmark = async (industry) => {
-  const fallback = normalizeBenchmark(null, industry);
-
+export const getIndustryBenchmark = async (industry, employeeCount = 0) => {
+  // Load benchmark from DB. If Supabase is not configured or no row exists,
+  // return null. Callers must handle null/throw a user-facing error.
   if (!hasSupabaseConfig) {
-    return fallback;
+    console.warn('Supabase not configured: getIndustryBenchmark returning null');
+    return null;
   }
-
   try {
-    const { data, error } = await supabase
-      .from('industry_benchmarks')
-      .select('*')
-      .eq('industry', industry)
-      .limit(1)
-      .maybeSingle();
+  const companySize = getCompanySizeCategory(employeeCount);
 
-    if (error) throw error;
-    return normalizeBenchmark(data, industry);
-  } catch (err) {
-    return handleError('Error fetching benchmark:', err, fallback);
+  const { data, error } = await supabase
+    .from('benchmarks')
+    .select('*')
+    .eq('industry', industry)
+    .eq('company_size_category', companySize)
+    .maybeSingle();
+
+  console.log('Benchmark Query:', {
+    industry,
+    companySize,
+    data,
+    error
+  });
+
+  if (error) {
+    console.error('Benchmark query failed:', error);
+    return null;
   }
+
+  if (!data) {
+    console.warn('No benchmark found for:', industry, companySize);
+    return null;
+  }
+
+  return normalizeBenchmark(data, industry);
+
+} catch (err) {
+  console.error('Error loading benchmark:', err);
+  return null;
+}
 };
 
 export const getIndustryStats = async (industry) => {
   if (!hasSupabaseConfig) {
-    return DEMO_INDUSTRY_STATS;
+    console.warn('Supabase not configured: getIndustryStats returning null');
+    return null;
   }
 
   try {
-    const { data: referenceStats, error: referenceError } = await supabase
-      .from('industry_score_benchmarks')
+    const { data: benchmarkStats, error: benchmarkError } = await supabase
+      .from('benchmarks')
       .select('avg_total, avg_e, avg_s, avg_g, company_count, sample_size')
       .eq('industry', industry)
+      .eq('company_size_category', 'All')
       .limit(1)
       .maybeSingle();
-
-    if (referenceError) throw referenceError;
+    if (benchmarkError) throw benchmarkError;
 
     const { data, error } = await supabase
-      .from('esg_records')
+      .from('esg_results')
       .select('total_score, e_score, s_score, g_score, company_id, companies!inner(industry)')
       .eq('companies.industry', industry);
-
     if (error) throw error;
 
     const totals = (data || []).map((entry) => Number(entry.total_score || 0));
@@ -314,23 +220,20 @@ export const getIndustryStats = async (industry) => {
       sampleSize: totals.length,
     };
 
-    const liveStatsAreRobust =
+    const robust =
       liveStats.companyCount >= 2 &&
       liveStats.sampleSize >= 3 &&
       hasMeaningfulVariance(totals);
+    if (robust) return liveStats;
 
-    if (liveStatsAreRobust) {
-      return liveStats;
-    }
-
-    if (referenceStats) {
+    if (benchmarkStats) {
       return {
-        industryAverageScore: Math.round(Number(referenceStats.avg_total || 0)),
-        industryAverageE: Math.round(Number(referenceStats.avg_e || 0)),
-        industryAverageS: Math.round(Number(referenceStats.avg_s || 0)),
-        industryAverageG: Math.round(Number(referenceStats.avg_g || 0)),
-        companyCount: Number(referenceStats.company_count || 0),
-        sampleSize: Number(referenceStats.sample_size || 0),
+        industryAverageScore: Math.round(Number(benchmarkStats.avg_total || 0)),
+        industryAverageE: Math.round(Number(benchmarkStats.avg_e || 0)),
+        industryAverageS: Math.round(Number(benchmarkStats.avg_s || 0)),
+        industryAverageG: Math.round(Number(benchmarkStats.avg_g || 0)),
+        companyCount: Number(benchmarkStats.company_count || 0),
+        sampleSize: Number(benchmarkStats.sample_size || 0),
       };
     }
 
@@ -347,11 +250,10 @@ export const getIndustryStats = async (industry) => {
   }
 };
 
-export const saveESGData = async ({ company, env, soc, gov, scores, auditLogEntry, userId }) => {
+export const saveESGData = async ({ company, env, soc, gov, scores, auditLogEntry, userId, userEmail, benchmark }) => {
   if (!hasSupabaseConfig) {
-    return { companyId: DEMO_COMPANY.id, success: true };
+    return { success: false, error: 'Supabase not configured - cannot persist data.' };
   }
-
   if (!userId) {
     return { success: false, error: 'Bitte einloggen, um Daten zu speichern.' };
   }
@@ -371,7 +273,6 @@ export const saveESGData = async ({ company, env, soc, gov, scores, auditLogEntr
         })
         .eq('id', companyId)
         .eq('user_id', userId);
-
       if (error) throw error;
     } else {
       const { data, error } = await supabase
@@ -385,36 +286,43 @@ export const saveESGData = async ({ company, env, soc, gov, scores, auditLogEntr
         })
         .select('*')
         .single();
-
       if (error) throw error;
       companyId = data.id;
     }
 
-    const { error: recordError } = await supabase.from('esg_records').insert({
+    const insertPayload = {
       company_id: companyId,
       co2_emissions: env.co2,
       energy_consumption: env.energy,
       renewable_share: env.renewable,
+      recycling_rate: env.recycling,
       diversity_share: soc.diversity,
       employee_turnover: soc.turnover,
+      employee_satisfaction: soc.satisfaction,
       independent_board_share: gov.boardIndependent,
+      data_protection_score: gov.dataProtection,
       legal_incidents: gov.incidents,
       e_score: scores.eScore,
       s_score: scores.sScore,
       g_score: scores.gScore,
       total_score: scores.total,
-    });
+    };
 
+    if (benchmark) {
+      if (benchmark.id) insertPayload.benchmark_id = benchmark.id;
+      insertPayload.benchmark_snapshot = benchmark;
+    }
+
+    const { error: recordError } = await supabase.from('esg_results').insert(insertPayload);
     if (recordError) throw recordError;
 
-    const { error: auditError } = await supabase.from('audit_log').insert({
+    const { error: auditError } = await supabase.from('audit_logs').insert({
       company_id: companyId,
       action: auditLogEntry?.action || 'ESG Neuberechnung',
-      actor: auditLogEntry?.user || 'Aktueller Benutzer',
+      actor: auditLogEntry?.user || userEmail || 'Aktueller Benutzer',
       impact: auditLogEntry?.impactText || 'N/A',
       status: auditLogEntry?.status || 'Geprüft',
     });
-
     if (auditError) throw auditError;
 
     return { companyId, success: true };
@@ -423,4 +331,20 @@ export const saveESGData = async ({ company, env, soc, gov, scores, auditLogEntr
   }
 };
 
-export const getKnownIndustries = () => Object.keys(benchmarks);
+export const getKnownIndustries = async () => {
+  if (!hasSupabaseConfig) return [];
+
+  const { data, error } = await supabase
+    .from('benchmarks')
+    .select('industry')
+    .order('industry', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching known industries:', error);
+    return [];
+  }
+
+  return [...new Set((data || []).map(row => row.industry))];
+};
+
+export const getBenchmarkCategories = () => ['Micro', 'Small', 'Medium', 'Large', 'All'];

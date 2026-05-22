@@ -5,22 +5,19 @@ import {
   getESGRecords,
   getIndustryBenchmark,
   getIndustryStats,
+  getKnownIndustries,
   getLatestCompanyForUser,
   saveESGData,
 } from '../services/esgService';
-import {
-  calculateESGScores,
-  getBenchmarkStatus,
-  getRecommendations,
-  normalizeBenchmark,
-} from '../lib/esgEngine';
+import { calculateESGScores, getRecommendations } from '../lib/esgEngine';
+import { getBenchmarkStatus, normalizeBenchmark } from '../lib/benchmarkUtils';
 import { buildDashboardAnalytics } from '../lib/calculations';
 
 const defaultFormData = {
-  company: { name: 'Demo GmbH', industry: 'Manufacturing', employees: 250, revenue: 25000000 },
-  env: { co2: 12000, energy: 38000, renewable: 30 },
-  soc: { diversity: 32, turnover: 10 },
-  gov: { incidents: 0, boardIndependent: 70 },
+  company: { name: '', industry: '', employees: 0, revenue: 0 },
+  env: { co2: 0, energy: 0, renewable: 0, recycling: 0 },
+  soc: { diversity: 0, turnover: 0, satisfaction: 0 },
+  gov: { incidents: 0, boardIndependent: 0, dataProtection: 0 },
 };
 
 const emptyScores = { eScore: 0, sScore: 0, gScore: 0, total: 0, prevTotal: 0 };
@@ -41,11 +38,7 @@ const buildComparisonRows = (data, bm) => {
       label: 'Energieintensität (MWh / Mio. €)',
       actual: Number(data.actualEnergyInt || 0).toFixed(1),
       target: Number(bm.energyInt || 0).toFixed(1),
-      status: getBenchmarkStatus(
-        Number(data.actualEnergyInt || 0),
-        Number(bm.energyInt || 0),
-        true
-      ),
+      status: getBenchmarkStatus(Number(data.actualEnergyInt || 0), Number(bm.energyInt || 0), true),
     },
     {
       key: 'renewable',
@@ -53,6 +46,13 @@ const buildComparisonRows = (data, bm) => {
       actual: `${Number(data.env?.renewable || 0).toFixed(1)}%`,
       target: `${Number(bm.renewable || 0).toFixed(1)}%`,
       status: getBenchmarkStatus(Number(data.env?.renewable || 0), Number(bm.renewable || 0), false),
+    },
+    {
+      key: 'recycling',
+      label: 'Recyclingquote (%)',
+      actual: `${Number(data.env?.recycling || 0).toFixed(1)}%`,
+      target: `${Number(bm.recycling || 0).toFixed(1)}%`,
+      status: getBenchmarkStatus(Number(data.env?.recycling || 0), Number(bm.recycling || 0), false),
     },
     {
       key: 'diversity',
@@ -69,15 +69,18 @@ const buildComparisonRows = (data, bm) => {
       status: getBenchmarkStatus(Number(data.soc?.turnover || 0), Number(bm.turnover || 0), true),
     },
     {
-      key: 'board',
-      label: 'Unabhängige Räte (%)',
-      actual: `${Number(data.gov?.boardIndependent || 0).toFixed(1)}%`,
-      target: `${Number(bm.boardInd || 0).toFixed(1)}%`,
-      status: getBenchmarkStatus(
-        Number(data.gov?.boardIndependent || 0),
-        Number(bm.boardInd || 0),
-        false
-      ),
+      key: 'satisfaction',
+      label: 'Mitarbeiterzufriedenheit',
+      actual: `${Number(data.soc?.satisfaction || 0).toFixed(1)}%`,
+      target: `${Number(bm.satisfaction || 0).toFixed(1)}%`,
+      status: getBenchmarkStatus(Number(data.soc?.satisfaction || 0), Number(bm.satisfaction || 0), false),
+    },
+    {
+      key: 'dataProtection',
+      label: 'Datenschutzbewertung',
+      actual: `${Number(data.gov?.dataProtection || 0).toFixed(1)}%`,
+      target: `${Number(bm.privacy || 0).toFixed(1)}%`,
+      status: getBenchmarkStatus(Number(data.gov?.dataProtection || 0), Number(bm.privacy || 0), false),
     },
   ];
 };
@@ -88,19 +91,23 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
   const [scores, setScores] = useState(emptyScores);
   const [esgRecords, setEsgRecords] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
-  const [benchmark, setBenchmark] = useState(normalizeBenchmark(null, defaultFormData.company.industry));
+  // No hardcoded benchmark in initial state. Benchmark is loaded from Supabase
+  // for real data; when unavailable `benchmark` will be `null` and UI should
+  // render accordingly (no demo values).
+  const [benchmark, setBenchmark] = useState(null);
   const [benchmarkComparisons, setBenchmarkComparisons] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
+  const [industryOptions, setIndustryOptions] = useState([]);
   const [companyId, setCompanyId] = useState(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const loadCompanyContext = useCallback(async (resolvedCompanyId, industry, currentScores = null) => {
+  const loadCompanyContext = useCallback(async (resolvedCompanyId, industry, employeeCount, currentScores = null) => {
     const [records, logs, bm, industryStats] = await Promise.all([
       getESGRecords(resolvedCompanyId, userId),
       getAuditLog(resolvedCompanyId, userId),
-      getIndustryBenchmark(industry),
+      getIndustryBenchmark(industry, employeeCount),
       getIndustryStats(industry),
     ]);
 
@@ -120,7 +127,7 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
         prevTotal: previous?.total_score ?? latest.total_score,
       };
 
-  const companyData = await getCompanyInfo(resolvedCompanyId, userId);
+      const companyData = await getCompanyInfo(resolvedCompanyId, userId);
       const mergedFormData = {
         company: {
           name: companyData?.company_name || defaultFormData.company.name,
@@ -132,16 +139,17 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
           co2: Number(latest.co2_emissions ?? defaultFormData.env.co2),
           energy: Number(latest.energy_consumption ?? defaultFormData.env.energy),
           renewable: Number(latest.renewable_share ?? defaultFormData.env.renewable),
+          recycling: Number(latest.recycling_rate ?? defaultFormData.env.recycling),
         },
         soc: {
           diversity: Number(latest.diversity_share ?? defaultFormData.soc.diversity),
           turnover: Number(latest.employee_turnover ?? defaultFormData.soc.turnover),
+          satisfaction: Number(latest.employee_satisfaction ?? defaultFormData.soc.satisfaction),
         },
         gov: {
           incidents: Number(latest.legal_incidents ?? defaultFormData.gov.incidents),
-          boardIndependent: Number(
-            latest.independent_board_share ?? defaultFormData.gov.boardIndependent
-          ),
+          boardIndependent: Number(latest.independent_board_share ?? defaultFormData.gov.boardIndependent),
+          dataProtection: Number(latest.data_protection_score ?? defaultFormData.gov.dataProtection),
         },
       };
 
@@ -181,7 +189,7 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
       setScores(emptyScores);
       setEsgRecords([]);
       setAuditLog([]);
-      setBenchmark(normalizeBenchmark(null, defaultFormData.company.industry));
+      setBenchmark(null);
       setBenchmarkComparisons([]);
       setRecommendations([]);
       setAnalytics(buildDashboardAnalytics({ esgRecords: [], currentScores: null, industryStats: null }));
@@ -195,17 +203,27 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
         setError('');
         setIsBootstrapping(true);
 
-        const latestCompany = await getLatestCompanyForUser(userId);
+        const [latestCompany, industries] = await Promise.all([
+          getLatestCompanyForUser(userId),
+          getKnownIndustries(),
+        ]);
+
+        setIndustryOptions(industries.length ? industries : [defaultFormData.company.industry]);
+
         const resolvedCompanyId = latestCompany?.id || null;
         setCompanyId(resolvedCompanyId);
 
         if (!resolvedCompanyId) {
           setAnalytics(buildDashboardAnalytics({ esgRecords: [], currentScores: null, industryStats: null }));
-          setBenchmark(normalizeBenchmark(null, defaultFormData.company.industry));
+          setBenchmark(null);
           return;
         }
 
-        const computedAnalytics = await loadCompanyContext(resolvedCompanyId, latestCompany?.industry || defaultFormData.company.industry);
+        const computedAnalytics = await loadCompanyContext(
+          resolvedCompanyId,
+          latestCompany?.industry || defaultFormData.company.industry,
+          latestCompany?.employee_count ?? defaultFormData.company.employees,
+        );
         setAnalytics(computedAnalytics);
       } catch (err) {
         console.error('Bootstrap failed:', err);
@@ -238,12 +256,16 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
     setError('');
 
     try {
-      const bm = await getIndustryBenchmark(formData.company.industry);
+      const bm = await getIndustryBenchmark(formData.company.industry, formData.company.employees);
+      if (!bm) {
+        setError('Branchen-Benchmarks konnten nicht geladen werden. Bitte prüfen Sie die Serververbindung.');
+        setIsSaving(false);
+        return { success: false };
+      }
       const calculated = calculateESGScores(formData, bm);
 
       const prevTotal = esgRecords[0]?.total_score ?? calculated.total;
       const delta = calculated.total - prevTotal;
-
       const nextScores = {
         eScore: calculated.eScore,
         sScore: calculated.sScore,
@@ -267,13 +289,13 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
         scores: nextScores,
         auditLogEntry,
         userId,
+        userEmail: userLabel,
+        benchmark: bm,
       });
 
       if (!saveResult?.success) {
         throw new Error(saveResult?.error || 'Speichern fehlgeschlagen.');
       }
-
-      setCompanyId(saveResult.companyId);
 
       const newDashboardData = {
         ...formData,
@@ -281,22 +303,22 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
         actualEnergyInt: calculated.actualEnergyInt,
       };
 
+      setCompanyId(saveResult.companyId);
       setScores(nextScores);
       setBenchmark(calculated.benchmark);
       setDashboardData(newDashboardData);
-  setBenchmarkComparisons(buildComparisonRows(newDashboardData, calculated.benchmark));
+      setBenchmarkComparisons(buildComparisonRows(newDashboardData, calculated.benchmark));
       setRecommendations(getRecommendations(newDashboardData, calculated.benchmark, calculated.total));
 
       const computedAnalytics = await loadCompanyContext(
         saveResult.companyId,
         formData.company.industry,
+        formData.company.employees,
         nextScores
       );
       setAnalytics(computedAnalytics);
 
-      return {
-        success: true,
-      };
+      return { success: true };
     } catch (err) {
       console.error('Error during calculate and save:', err);
       setError(err.message || 'Fehler bei Berechnung und Speicherung.');
@@ -325,6 +347,7 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
     auditLog,
     analytics,
     companyId,
+    industryOptions,
     riskStatus,
     isSaving,
     isBootstrapping,

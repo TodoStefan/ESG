@@ -33,8 +33,9 @@ function LabelWithInfo({ label, info }) {
   );
 }
 
-export default function CompanyData({ formData, handleChange, onCalculate, isSaving, error }) {
+export default function CompanyData({ formData, handleChange, onCalculate, isSaving, error, industryOptions = [] }) {
   const industryLabel = getIndustryLabel(formData?.company?.industry);
+  const uniqueIndustries = [...new Set(industryOptions || [])].filter(Boolean);
 
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', animation: 'fadeIn 0.3s ease-in-out' }}>
@@ -72,12 +73,9 @@ export default function CompanyData({ formData, handleChange, onCalculate, isSav
             <div className="form-group">
               <label>Branche</label>
               <select className="form-control" value={formData.company.industry} onChange={e => handleChange('company', 'industry', e.target.value)}>
-                <option value="Manufacturing">Industrie</option>
-                <option value="Technology">Technologie</option>
-                <option value="Finance">Finanzwesen</option>
-                <option value="Healthcare">Gesundheitswesen</option>
-                <option value="Energy">Energie</option>
-                <option value="Retail">Handel</option>
+                {industryOptions.map((industry) => (
+                  <option key={industry} value={industry}>{getIndustryLabel(industry)}</option>
+                ))}
               </select>
             </div>
             <div className="form-group">
@@ -123,6 +121,15 @@ export default function CompanyData({ formData, handleChange, onCalculate, isSav
               </label>
               <input type="number" className="form-control" max="100" value={formData.env.renewable} onChange={e => handleChange('env', 'renewable', Number(e.target.value))} />
             </div>
+            <div className="form-group">
+              <label>
+                <LabelWithInfo
+                  label="Recyclingquote (%)"
+                  info="Anteil des Abfalls, der recycelt oder wiederverwendet wird."
+                />
+              </label>
+              <input type="number" className="form-control" max="100" value={formData.env.recycling} onChange={e => handleChange('env', 'recycling', Number(e.target.value))} />
+            </div>
           </div>
         </div>
       </div>
@@ -149,6 +156,15 @@ export default function CompanyData({ formData, handleChange, onCalculate, isSav
               </label>
               <input type="number" className="form-control" max="100" value={formData.soc.turnover} onChange={e => handleChange('soc', 'turnover', Number(e.target.value))} />
             </div>
+            <div className="form-group">
+              <label>
+                <LabelWithInfo
+                  label="Mitarbeiterzufriedenheit (%)"
+                  info="Subjektiver Score für Mitarbeitendenzufriedenheit auf einer Skala von 0 bis 100."
+                />
+              </label>
+              <input type="number" className="form-control" max="100" value={formData.soc.satisfaction} onChange={e => handleChange('soc', 'satisfaction', Number(e.target.value))} />
+            </div>
           </div>
         </div>
       </div>
@@ -165,6 +181,15 @@ export default function CompanyData({ formData, handleChange, onCalculate, isSav
                 />
               </label>
               <input type="number" className="form-control" max="100" value={formData.gov.boardIndependent} onChange={e => handleChange('gov', 'boardIndependent', Number(e.target.value))} />
+            </div>
+            <div className="form-group">
+              <label>
+                <LabelWithInfo
+                  label="Datenschutzbewertung (%)"
+                  info="Interne Bewertung des Datenschutz- und Informationssicherheits-Programms."
+                />
+              </label>
+              <input type="number" className="form-control" max="100" value={formData.gov.dataProtection} onChange={e => handleChange('gov', 'dataProtection', Number(e.target.value))} />
             </div>
             <div className="form-group">
               <label>

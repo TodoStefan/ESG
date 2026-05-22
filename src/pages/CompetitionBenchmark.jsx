@@ -5,14 +5,17 @@ import { getIndustryLabel } from '../lib/industryLabels';
 export default function CompetitionBenchmark({ dashboardData, scores, analytics, goToDataTab }) {
   const industry = getIndustryLabel(dashboardData?.company?.industry);
 
-  const sampleCompetitors = [
-    { name: 'Vergleichsunternehmen A', total: Math.max(35, (analytics?.industryAverage || 55) - 8), note: 'Typischer Branchenwert' },
-    { name: 'Vergleichsunternehmen B', total: Math.max(40, (analytics?.industryAverage || 55) - 2), note: 'Oberes Mittelfeld' },
-    { name: 'Ihr Unternehmen', total: scores?.total || 0, note: 'Aktueller ESG-Wert' },
-    { name: 'Vergleichsunternehmen C', total: Math.min(92, (analytics?.industryAverage || 55) + 9), note: 'Referenzniveau der Spitzenreiter' },
+  const industryAvg = analytics?.industryAverage ?? 0;
+  const ownScore = Number(scores?.total || 0);
+
+  const competitors = [
+    { name: 'Branchenmittel', total: Number(industryAvg || 0), note: 'Ø aller Unternehmen in der Branche' },
+    { name: 'Ihr Unternehmen', total: ownScore, note: 'Aktueller ESG-Wert' },
+    { name: 'Oberes Mittelfeld', total: Math.max(0, Number(industryAvg || 0) - 6), note: 'Strategische Benchmark' },
+    { name: 'Spitzenreiter', total: Math.min(100, Number(industryAvg || 0) + 12), note: 'Top 10% der Branche' },
   ].sort((a, b) => b.total - a.total);
 
-  const companyRank = sampleCompetitors.findIndex((entry) => entry.name === 'Ihr Unternehmen') + 1;
+  const companyRank = competitors.findIndex((entry) => entry.name === 'Ihr Unternehmen') + 1;
 
   return (
     <div style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
@@ -29,7 +32,7 @@ export default function CompetitionBenchmark({ dashboardData, scores, analytics,
         <div className="kpi-card esg-accent-card">
           <div className="kpi-title">Deine Position im Branchenvergleich</div>
           <div className="kpi-value">#{companyRank}</div>
-          <div className="kpi-trend trend-neutral">Von {sampleCompetitors.length} Vergleichsunternehmen</div>
+          <div className="kpi-trend trend-neutral">Von {competitors.length} Vergleichsunternehmen</div>
         </div>
         <div className="kpi-card esg-accent-card">
           <div className="kpi-title">Branchen-Ø ESG-Wert</div>
@@ -38,7 +41,7 @@ export default function CompetitionBenchmark({ dashboardData, scores, analytics,
         </div>
         <div className="kpi-card esg-accent-card">
           <div className="kpi-title">Referenzniveau führender Unternehmen</div>
-          <div className="kpi-value">{Math.max(...sampleCompetitors.map((c) => c.total))}</div>
+          <div className="kpi-value">{Math.max(...competitors.map((c) => c.total))}</div>
           <div className="kpi-trend trend-up"><TrendingUp size={14} /> Zielniveau der Branchen-Spitzenreiter</div>
         </div>
       </div>
@@ -59,7 +62,7 @@ export default function CompetitionBenchmark({ dashboardData, scores, analytics,
                     </tr>
                   </thead>
                   <tbody>
-                    {sampleCompetitors.map((entry, index) => (
+                    {competitors.map((entry, index) => (
                       <tr key={entry.name} style={entry.name === 'Ihr Unternehmen' ? { background: 'var(--success-bg)' } : undefined}>
                         <td style={{ fontWeight: 700 }}>#{index + 1}</td>
                         <td style={{ fontWeight: entry.name === 'Ihr Unternehmen' ? 700 : 500 }}>{entry.name}</td>

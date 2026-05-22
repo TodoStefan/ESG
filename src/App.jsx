@@ -51,6 +51,7 @@ export default function App() {
     auditLog,
     analytics,
     riskStatus,
+    industryOptions,
     isSaving,
     isBootstrapping,
     error,
@@ -269,6 +270,7 @@ export default function App() {
               onCalculate={handleCalculateAndSave}
               isSaving={isSaving}
               error={error}
+              industryOptions={industryOptions}
             />
           )}
 
