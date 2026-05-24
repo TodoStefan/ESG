@@ -87,7 +87,7 @@ export const getCompanyInfo = async (companyId, userId = null) => {
   } catch (err) {
     return handleError('Error fetching company info:', err, null);
   }
-  }
+}
 
 export const getESGRecords = async (companyId, userId = null) => {
   if (!companyId && hasSupabaseConfig) return [];
@@ -149,38 +149,39 @@ export const getIndustryBenchmark = async (industry, employeeCount = 0) => {
     return null;
   }
   try {
-  const companySize = getCompanySizeCategory(employeeCount);
+    const companySize = getCompanySizeCategory(employeeCount);
 
-  const { data, error } = await supabase
-    .from('benchmarks')
-    .select('*')
-    .eq('industry', industry)
-    .eq('company_size_category', companySize)
-    .maybeSingle();
+    const { data, error } = await supabase
+      .from('benchmarks')
+      .select('*')
+      .eq('industry', industry)
+      .eq('company_size_category', companySize)
+      .limit(1);
 
-  console.log('Benchmark Query:', {
-    industry,
-    companySize,
-    data,
-    error
-  });
+    console.log('Benchmark Query:', {
+      industry,
+      companySize,
+      data,
+      error
+    });
 
-  if (error) {
-    console.error('Benchmark query failed:', error);
+    if (error) {
+      console.error('Benchmark query failed:', error);
+      return null;
+    }
+
+    const row = data?.[0] || null;
+    if (!row) {
+      console.warn('No benchmark found for:', industry, companySize);
+      return null;
+    }
+
+    return normalizeBenchmark(row, industry);
+
+  } catch (err) {
+    console.error('Error loading benchmark:', err);
     return null;
   }
-
-  if (!data) {
-    console.warn('No benchmark found for:', industry, companySize);
-    return null;
-  }
-
-  return normalizeBenchmark(data, industry);
-
-} catch (err) {
-  console.error('Error loading benchmark:', err);
-  return null;
-}
 };
 
 export const getIndustryStats = async (industry) => {
@@ -190,14 +191,14 @@ export const getIndustryStats = async (industry) => {
   }
 
   try {
-    const { data: benchmarkStats, error: benchmarkError } = await supabase
+    const { data: benchmarkStatsArr, error: benchmarkError } = await supabase
       .from('benchmarks')
       .select('avg_total, avg_e, avg_s, avg_g, company_count, sample_size')
       .eq('industry', industry)
       .eq('company_size_category', 'All')
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
     if (benchmarkError) throw benchmarkError;
+    const benchmarkStats = benchmarkStatsArr?.[0] || null;
 
     const { data, error } = await supabase
       .from('esg_results')
@@ -334,6 +335,10 @@ export const saveESGData = async ({ company, env, soc, gov, scores, auditLogEntr
 export const getKnownIndustries = async () => {
   if (!hasSupabaseConfig) return [];
 
+  // Import the canonical English keys the app recognises
+  const { industryLabels } = await import('../lib/industryLabels');
+  const validKeys = new Set(Object.keys(industryLabels));
+
   const { data, error } = await supabase
     .from('benchmarks')
     .select('industry')
@@ -344,7 +349,16 @@ export const getKnownIndustries = async () => {
     return [];
   }
 
-  return [...new Set((data || []).map(row => row.industry))];
+  const seen = new Set();
+  const unique = [];
+  for (const row of (data || [])) {
+    const key = (row.industry || '').trim();
+    if (key && !seen.has(key) && validKeys.has(key)) {
+      seen.add(key);
+      unique.push(key);
+    }
+  }
+  return unique.length ? unique : Object.keys(industryLabels);
 };
 
 export const getBenchmarkCategories = () => ['Micro', 'Small', 'Medium', 'Large', 'All'];

@@ -36,6 +36,7 @@ function LabelWithInfo({ label, info }) {
 export default function CompanyData({ formData, handleChange, onCalculate, isSaving, error, industryOptions = [] }) {
   const industryLabel = getIndustryLabel(formData?.company?.industry);
   const uniqueIndustries = [...new Set(industryOptions || [])].filter(Boolean);
+  console.log('DEBUG industryOptions:', industryOptions, 'uniqueIndustries:', uniqueIndustries);
 
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', animation: 'fadeIn 0.3s ease-in-out' }}>
@@ -44,9 +45,9 @@ export default function CompanyData({ formData, handleChange, onCalculate, isSav
           <h1>Meine Unternehmensdaten</h1>
           <p>Gib deine Unternehmensdaten ein. Der Vergleich erfolgt mit Branchenwerten aus dem Bereich <b>{industryLabel}</b>.</p>
         </div>
-        <button 
-          className="btn btn-primary" 
-          onClick={onCalculate} 
+        <button
+          className="btn btn-primary"
+          onClick={onCalculate}
           disabled={isSaving}
           style={{ fontSize: '1rem', padding: '0.75rem 1.5rem', opacity: isSaving ? 0.7 : 1 }}
         >
@@ -73,7 +74,7 @@ export default function CompanyData({ formData, handleChange, onCalculate, isSav
             <div className="form-group">
               <label>Branche</label>
               <select className="form-control" value={formData.company.industry} onChange={e => handleChange('company', 'industry', e.target.value)}>
-                {industryOptions.map((industry) => (
+                {uniqueIndustries.map((industry) => (
                   <option key={industry} value={industry}>{getIndustryLabel(industry)}</option>
                 ))}
               </select>

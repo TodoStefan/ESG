@@ -18,8 +18,7 @@ INSERT INTO public.benchmarks (
   avg_e,
   avg_s,
   avg_g,
-  company_count,
-  sample_size
+  company_count
 )
 VALUES
   ('Manufacturing','Micro', 180, 560, 18, 34, 28, 14, 62, 62, 48, 58, 53, 54, 22, 85),
@@ -67,7 +66,6 @@ ON CONFLICT (industry, company_size_category) DO UPDATE SET
   avg_s = EXCLUDED.avg_s,
   avg_g = EXCLUDED.avg_g,
   company_count = EXCLUDED.company_count,
-  sample_size = EXCLUDED.sample_size,
   updated_at = timezone('utc', now());
 
 -- 2) Hinweise ---------------------------------------------------------------

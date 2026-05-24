@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS public.benchmarks (
   company_count integer NOT NULL DEFAULT 0 CHECK (company_count >= 0),
   sample_size integer NOT NULL DEFAULT 0 CHECK (sample_size >= 0),
   created_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
-  updated_at timestamptz NOT NULL DEFAULT timezone('utc', now())
+  updated_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
+  CONSTRAINT unique_industry_size UNIQUE (industry, company_size_category)
 );
 
 ALTER TABLE public.benchmarks

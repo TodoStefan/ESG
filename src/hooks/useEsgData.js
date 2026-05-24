@@ -208,12 +208,19 @@ export const useEsgData = ({ userId = null, isAuthenticated = false, userLabel =
           getKnownIndustries(),
         ]);
 
-        setIndustryOptions(industries.length ? industries : [defaultFormData.company.industry]);
+        const availableIndustries = industries.length ? industries : [];
+        setIndustryOptions(availableIndustries.length ? availableIndustries : [defaultFormData.company.industry]);
 
         const resolvedCompanyId = latestCompany?.id || null;
         setCompanyId(resolvedCompanyId);
 
         if (!resolvedCompanyId) {
+          // New user: default the industry to the first available option
+          const defaultIndustry = availableIndustries[0] || 'Manufacturing';
+          setFormData((prev) => ({
+            ...prev,
+            company: { ...prev.company, industry: defaultIndustry },
+          }));
           setAnalytics(buildDashboardAnalytics({ esgRecords: [], currentScores: null, industryStats: null }));
           setBenchmark(null);
           return;
